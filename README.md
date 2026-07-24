@@ -26,6 +26,7 @@ ts-hud
 | `esc` | Clear search and exit search mode |
 | `enter` | SSH into the selected online peer |
 | `x` | Open the exit node picker |
+| `d` | Open the DERP latency matrix |
 | `r` | Manual refresh |
 | `q` / `ctrl+c` | Quit |
 
@@ -41,6 +42,18 @@ Press `x` to open a list of peers advertising as exit nodes.
 | `enter` | Select the highlighted peer as your exit node, or clear it via the `(none)` entry |
 | `l` | Toggle "allow LAN access" (applied when you select a node) |
 | `esc` / `x` | Cancel without changing anything |
+
+### DERP latency matrix
+
+Press `d` to run a live network check (real STUN probes, same as `tailscale
+netcheck`) and see latency to every DERP relay region, fastest first, with
+your current home region marked `[preferred]`. This takes a few seconds,
+unlike the rest of the UI.
+
+| Key | Action |
+|---|---|
+| `r` | Re-run the check |
+| `esc` / `d` | Back to the peer table |
 
 ## Flags
 

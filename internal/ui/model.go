@@ -22,6 +22,11 @@ type tickMsg struct{}
 
 type exitNodeResultMsg struct{ err error }
 
+type derpReportMsg struct {
+	regions []tsnet.DERPRegion
+	err     error
+}
+
 // Model is the root Bubble Tea model for ts-hud.
 type Model struct {
 	fetcher         *tsnet.Fetcher
@@ -39,6 +44,11 @@ type Model struct {
 	pickingExitNode bool
 	exitNodeCursor  int
 	allowLANAccess  bool
+
+	viewingDERP bool
+	derpRegions []tsnet.DERPRegion
+	derpLoading bool
+	derpErr     error
 
 	width  int
 	height int
@@ -100,6 +110,18 @@ func clearExitNodeCmd(fetcher *tsnet.Fetcher) tea.Cmd {
 	}
 }
 
+// derpCheckCmd runs a live network check, sending real STUN probes to every
+// DERP region. That's slower than the other commands here (bounded by
+// netcheck.ReportTimeout, 5s), hence the longer context deadline.
+func derpCheckCmd(fetcher *tsnet.Fetcher) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		regions, err := fetcher.NetCheck(ctx)
+		return derpReportMsg{regions: regions, err: err}
+	}
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -133,12 +155,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, fetchCmd(m.fetcher)
 
+	case derpReportMsg:
+		m.derpLoading = false
+		m.derpRegions = msg.regions
+		m.derpErr = msg.err
+		return m, nil
+
 	case tea.KeyMsg:
 		switch {
 		case m.searching:
 			return m.updateSearch(msg)
 		case m.pickingExitNode:
 			return m.updateExitNodePicker(msg)
+		case m.viewingDERP:
+			return m.updateDERPView(msg)
 		default:
 			return m.updateNormal(msg)
 		}
@@ -173,8 +203,26 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pickingExitNode = true
 		m.exitNodeCursor = m.initialExitNodeCursor()
 		return m, nil
+	case "d":
+		m.viewingDERP = true
+		m.derpLoading = true
+		m.derpErr = nil
+		return m, derpCheckCmd(m.fetcher)
 	}
 	m.clampCursor()
+	return m, nil
+}
+
+func (m Model) updateDERPView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "d":
+		m.viewingDERP = false
+		return m, nil
+	case "r":
+		m.derpLoading = true
+		m.derpErr = nil
+		return m, derpCheckCmd(m.fetcher)
+	}
 	return m, nil
 }
 
@@ -298,10 +346,14 @@ func (m Model) View() string {
 	header := m.renderHeader()
 
 	var body, footer string
-	if m.pickingExitNode {
+	switch {
+	case m.pickingExitNode:
 		body = renderExitNodePicker(m.exitNodeCandidates(), m.exitNodeCursor, m.allowLANAccess, width)
 		footer = helpStyle.Render("j/k move  enter select  l toggle LAN access  esc cancel")
-	} else {
+	case m.viewingDERP:
+		body = renderDERPTable(m.derpRegions, m.derpLoading, m.derpErr, width)
+		footer = helpStyle.Render("r refresh  esc/d back")
+	default:
 		body = renderTable(m.filtered, m.cursor, width)
 		switch {
 		case m.searching:
@@ -309,7 +361,7 @@ func (m Model) View() string {
 		case m.err != nil:
 			footer = errorStyle.Render("error: " + m.err.Error())
 		default:
-			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  r refresh  q quit")
+			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  d derp  r refresh  q quit")
 		}
 	}
 
