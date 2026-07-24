@@ -17,7 +17,7 @@ const (
 	colConnWidth   = 11
 )
 
-func renderTable(peers []tsnet.Peer, cursor int) string {
+func renderTable(peers []tsnet.Peer, cursor, width int) string {
 	var b strings.Builder
 
 	b.WriteString(headerStyle.Render(formatRow("HOSTNAME", "IP", "OS", "STATUS", "CONN")))
@@ -50,6 +50,13 @@ func renderTable(peers []tsnet.Peer, cursor int) string {
 
 		style := rowStyle
 		if i == cursor {
+			// Fit the row to an exact width *before* styling it: lipgloss's
+			// Style.Width() pads short content but word-wraps content that's
+			// already too wide, which would break a single table row across
+			// multiple lines. fitWidth does a hard single-line truncate
+			// instead, so the highlight background still fills the row
+			// (via the padding case) without ever wrapping it.
+			row = fitWidth(row, width)
 			style = selectedRowStyle
 		}
 		b.WriteString(style.Render(row))
@@ -62,7 +69,7 @@ func renderTable(peers []tsnet.Peer, cursor int) string {
 // renderExitNodePicker lists exit-node-eligible peers plus a leading
 // "none" entry that clears the exit node selection. cursor 0 addresses
 // the "none" entry; cursor i (i>0) addresses candidates[i-1].
-func renderExitNodePicker(candidates []tsnet.Peer, cursor int, allowLAN bool) string {
+func renderExitNodePicker(candidates []tsnet.Peer, cursor int, allowLAN bool, width int) string {
 	var b strings.Builder
 
 	lanState := "off"
@@ -83,11 +90,13 @@ func renderExitNodePicker(candidates []tsnet.Peer, cursor int, allowLAN bool) st
 	}
 
 	for i, row := range rows {
+		row = "  " + row
 		style := rowStyle
 		if i == cursor {
+			row = fitWidth(row, width)
 			style = selectedRowStyle
 		}
-		b.WriteString(style.Render("  " + row))
+		b.WriteString(style.Render(row))
 		b.WriteString("\n")
 	}
 

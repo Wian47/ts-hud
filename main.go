@@ -44,7 +44,7 @@ func main() {
 	}
 
 	m := ui.NewModel(tsnet.NewFetcher(), *refreshRate)
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "ts-hud:", err)
 		os.Exit(1)
