@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"errors"
 	"net/netip"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -138,6 +140,20 @@ func TestBuildSSHCommandPrefersDNSName(t *testing.T) {
 	c := buildSSHCommand(peer)
 	if len(c.Args) != 2 || c.Args[0] != "ssh" || c.Args[1] != "bravo.tailnet-1234.ts.net" {
 		t.Fatalf("buildSSHCommand args = %v, want [ssh bravo.tailnet-1234.ts.net]", c.Args)
+	}
+}
+
+func TestViewRendersErrorWithoutPanicking(t *testing.T) {
+	m := NewModel(tsnet.NewFetcher(), time.Second)
+	updated, _ := m.Update(errMsg{err: errors.New("tailscaled: not running")})
+	m = updated.(Model)
+
+	view := m.View()
+	if !contains(view, "error: tailscaled: not running") {
+		t.Fatalf("View() missing error text\n---\n%s", view)
+	}
+	if !contains(view, "no peers match") {
+		t.Fatalf("View() missing empty-table message\n---\n%s", view)
 	}
 }
 
