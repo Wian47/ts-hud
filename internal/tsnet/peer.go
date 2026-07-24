@@ -52,15 +52,31 @@ func (p Peer) SSHTarget() string {
 	return p.HostName
 }
 
+// DisplayName returns the name ts-hud shows for a peer: the short
+// label of its Tailscale device name (the same name `tailscale status`
+// displays), falling back to its raw OS hostname when no DNS name is
+// known. The raw hostname is unreliable for display since two peers
+// can report the same OS hostname while having distinct device names.
+func (p Peer) DisplayName() string {
+	if p.DNSName != "" {
+		name := strings.TrimSuffix(p.DNSName, ".")
+		if i := strings.IndexByte(name, '.'); i != -1 {
+			name = name[:i]
+		}
+		return name
+	}
+	return p.HostName
+}
+
 // MatchesQuery reports whether the peer matches a case-insensitive
-// substring search across hostname, OS, and Tailscale IPs. An empty
-// query matches everything.
+// substring search across display name, OS, and Tailscale IPs. An
+// empty query matches everything.
 func (p Peer) MatchesQuery(query string) bool {
 	if query == "" {
 		return true
 	}
 	q := strings.ToLower(query)
-	if strings.Contains(strings.ToLower(p.HostName), q) {
+	if strings.Contains(strings.ToLower(p.DisplayName()), q) {
 		return true
 	}
 	if strings.Contains(strings.ToLower(p.OS), q) {
