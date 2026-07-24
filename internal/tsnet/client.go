@@ -10,6 +10,7 @@ import (
 	"tailscale.com/client/local"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
+	"tailscale.com/tailcfg"
 )
 
 // localClient is the subset of *local.Client that Fetcher depends on,
@@ -17,6 +18,7 @@ import (
 type localClient interface {
 	Status(ctx context.Context) (*ipnstate.Status, error)
 	EditPrefs(ctx context.Context, mp *ipn.MaskedPrefs) (*ipn.Prefs, error)
+	CurrentDERPMap(ctx context.Context) (*tailcfg.DERPMap, error)
 }
 
 // Fetcher retrieves live Tailscale status, preferring the LocalAPI socket

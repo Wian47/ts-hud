@@ -297,6 +297,93 @@ func TestViewRendersExitNodePicker(t *testing.T) {
 	}
 }
 
+func TestEnterDERPViewStartsLoadingAndReturnsCmd(t *testing.T) {
+	m := newTestModel()
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = updated.(Model)
+
+	if !m.viewingDERP {
+		t.Fatal("viewingDERP = false after 'd', want true")
+	}
+	if !m.derpLoading {
+		t.Fatal("derpLoading = false after 'd', want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update('d') returned nil cmd, want a netcheck command")
+	}
+}
+
+func TestDERPViewEscReturnsToPeerTable(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+
+	if m.viewingDERP {
+		t.Fatal("viewingDERP = true after esc, want false")
+	}
+	view := m.View()
+	if !contains(view, "HOSTNAME") {
+		t.Errorf("View() after leaving DERP view missing peer table\n---\n%s", view)
+	}
+}
+
+func TestDERPReportMsgPopulatesRegionsAndClearsLoading(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = updated.(Model)
+
+	regions := []tsnet.DERPRegion{
+		{Code: "fra", Name: "Frankfurt", Latency: 20 * time.Millisecond, Available: true, Preferred: true},
+		{Code: "syd", Name: "Sydney", Available: false},
+	}
+	updated, _ = m.Update(derpReportMsg{regions: regions})
+	m = updated.(Model)
+
+	if m.derpLoading {
+		t.Fatal("derpLoading = true after derpReportMsg, want false")
+	}
+
+	view := m.View()
+	for _, want := range []string{"fra", "Frankfurt", "preferred", "syd", "Sydney"} {
+		if !contains(view, want) {
+			t.Errorf("View() missing %q\n---\n%s", want, view)
+		}
+	}
+}
+
+func TestDERPViewShowsLoadingState(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = updated.(Model)
+
+	view := m.View()
+	if !contains(view, "checking DERP latency") {
+		t.Errorf("View() missing loading message\n---\n%s", view)
+	}
+}
+
+func TestDERPViewRefreshRestartsLoading(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = updated.(Model)
+	updated, _ = m.Update(derpReportMsg{regions: []tsnet.DERPRegion{{Code: "fra"}}})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m = updated.(Model)
+
+	if !m.derpLoading {
+		t.Fatal("derpLoading = false after 'r' in DERP view, want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update('r') in DERP view returned nil cmd, want a netcheck command")
+	}
+}
+
 func TestViewIsFramedWithRoundedBorder(t *testing.T) {
 	m := newTestModel()
 	view := m.View()

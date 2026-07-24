@@ -8,14 +8,17 @@ import (
 
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
+	"tailscale.com/tailcfg"
 	"tailscale.com/types/key"
 )
 
 // fakeLocalClient substitutes for *local.Client in tests that exercise
 // EditPrefs-based operations without a real tailscaled socket.
 type fakeLocalClient struct {
-	editErr   error
-	gotMasked *ipn.MaskedPrefs
+	editErr    error
+	gotMasked  *ipn.MaskedPrefs
+	derpMap    *tailcfg.DERPMap
+	derpMapErr error
 }
 
 func (f *fakeLocalClient) Status(ctx context.Context) (*ipnstate.Status, error) {
@@ -28,6 +31,10 @@ func (f *fakeLocalClient) EditPrefs(ctx context.Context, mp *ipn.MaskedPrefs) (*
 		return nil, f.editErr
 	}
 	return &mp.Prefs, nil
+}
+
+func (f *fakeLocalClient) CurrentDERPMap(ctx context.Context) (*tailcfg.DERPMap, error) {
+	return f.derpMap, f.derpMapErr
 }
 
 func TestFetcherSetExitNode(t *testing.T) {
