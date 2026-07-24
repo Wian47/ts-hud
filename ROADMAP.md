@@ -24,7 +24,7 @@
 ## Phase 2: Mesh Operations & Connectivity (v0.4.0 – v0.6.0)
 *Focus: Deep network operations, traffic routing, and built-in service sharing.*
 
-### 1. Dynamic Exit Node Switcher
+### 1. Dynamic Exit Node Switcher ✅
 * Inspect all advertised exit nodes across the tailnet.
 * One-key toggle to route internet traffic through a selected exit node with **Allow LAN Access** checkbox.
 

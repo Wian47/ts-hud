@@ -59,6 +59,45 @@ func renderTable(peers []tsnet.Peer, cursor int) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// renderExitNodePicker lists exit-node-eligible peers plus a leading
+// "none" entry that clears the exit node selection. cursor 0 addresses
+// the "none" entry; cursor i (i>0) addresses candidates[i-1].
+func renderExitNodePicker(candidates []tsnet.Peer, cursor int, allowLAN bool) string {
+	var b strings.Builder
+
+	lanState := "off"
+	if allowLAN {
+		lanState = "on"
+	}
+	b.WriteString(headerStyle.Render(fmt.Sprintf("Select exit node  (allow LAN access: %s)", lanState)))
+	b.WriteString("\n")
+
+	rows := make([]string, 0, len(candidates)+1)
+	rows = append(rows, "(none — disable exit node)")
+	for _, p := range candidates {
+		label := p.DisplayName()
+		if p.IsExitNode {
+			label += "  [active]"
+		}
+		rows = append(rows, label)
+	}
+
+	for i, row := range rows {
+		style := rowStyle
+		if i == cursor {
+			style = selectedRowStyle
+		}
+		b.WriteString(style.Render("  " + row))
+		b.WriteString("\n")
+	}
+
+	if len(candidates) == 0 {
+		b.WriteString(helpStyle.Render("  no peers are advertising as exit nodes"))
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
 func formatRow(hostname, ip, os, status, conn string) string {
 	return fmt.Sprintf(
 		"%s %s %s %s %s",

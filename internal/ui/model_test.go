@@ -175,6 +175,126 @@ func TestRenderHeaderUsesSelfDisplayName(t *testing.T) {
 	}
 }
 
+func exitNodeTestPeers() []tsnet.Peer {
+	return []tsnet.Peer{
+		{HostName: "alpha", DNSName: "alpha.tailnet-1234.ts.net.", Online: true, CanBeExitNode: true, ID: "node-alpha"},
+		{HostName: "bravo", DNSName: "bravo.tailnet-1234.ts.net.", Online: true, CanBeExitNode: true, IsExitNode: true, ID: "node-bravo"},
+		{HostName: "charlie", Online: true},
+	}
+}
+
+func TestEnterExitNodePickerFiltersToEligiblePeersAndSelectsActive(t *testing.T) {
+	m := newTestModel()
+	m.peers = exitNodeTestPeers()
+	m.applyFilter()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = updated.(Model)
+
+	if !m.pickingExitNode {
+		t.Fatal("pickingExitNode = false after 'x', want true")
+	}
+	if candidates := m.exitNodeCandidates(); len(candidates) != 2 {
+		t.Fatalf("exitNodeCandidates() len = %d, want 2 (charlie excluded)", len(candidates))
+	}
+	// bravo (IsExitNode=true) is candidates[1], so cursor should default to 2.
+	if m.exitNodeCursor != 2 {
+		t.Fatalf("exitNodeCursor = %d, want 2 (pointing at active exit node)", m.exitNodeCursor)
+	}
+}
+
+func TestExitNodePickerEscCancelsWithoutChanging(t *testing.T) {
+	m := newTestModel()
+	m.peers = exitNodeTestPeers()
+	m.applyFilter()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	if m.pickingExitNode {
+		t.Fatal("pickingExitNode = true after esc, want false")
+	}
+	if cmd != nil {
+		t.Fatal("Update(esc) in exit node picker returned non-nil cmd, want nil")
+	}
+}
+
+func TestExitNodePickerEnterSelectsAndReturnsCmd(t *testing.T) {
+	m := newTestModel()
+	m.peers = exitNodeTestPeers()
+	m.applyFilter()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.pickingExitNode {
+		t.Fatal("pickingExitNode = true after enter, want false")
+	}
+	if cmd == nil {
+		t.Fatal("Update(enter) in exit node picker returned nil cmd, want non-nil")
+	}
+}
+
+func TestExitNodePickerNoneEntryClearsExitNode(t *testing.T) {
+	m := newTestModel()
+	m.peers = exitNodeTestPeers()
+	m.applyFilter()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = updated.(Model)
+	m.exitNodeCursor = 0 // the synthetic "none" entry
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.pickingExitNode {
+		t.Fatal("pickingExitNode = true after selecting none, want false")
+	}
+	if cmd == nil {
+		t.Fatal("Update(enter) on none entry returned nil cmd, want non-nil")
+	}
+}
+
+func TestExitNodePickerTogglesAllowLANAccess(t *testing.T) {
+	m := newTestModel()
+	m.peers = exitNodeTestPeers()
+	m.applyFilter()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = updated.(Model)
+
+	if m.allowLANAccess {
+		t.Fatal("allowLANAccess = true initially, want false")
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = updated.(Model)
+	if !m.allowLANAccess {
+		t.Fatal("allowLANAccess = false after 'l', want true")
+	}
+}
+
+func TestViewRendersExitNodePicker(t *testing.T) {
+	m := newTestModel()
+	m.peers = exitNodeTestPeers()
+	m.applyFilter()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = updated.(Model)
+
+	view := m.View()
+	for _, want := range []string{"alpha", "bravo", "Select exit node"} {
+		if !contains(view, want) {
+			t.Errorf("View() missing %q\n---\n%s", want, view)
+		}
+	}
+	if contains(view, "charlie") {
+		t.Errorf("View() should not list charlie (not exit-node eligible)\n---\n%s", view)
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (func() bool {
 		for i := 0; i+len(needle) <= len(haystack); i++ {

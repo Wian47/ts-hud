@@ -8,14 +8,22 @@ import (
 	"sort"
 
 	"tailscale.com/client/local"
+	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 )
+
+// localClient is the subset of *local.Client that Fetcher depends on,
+// narrowed so tests can substitute a fake.
+type localClient interface {
+	Status(ctx context.Context) (*ipnstate.Status, error)
+	EditPrefs(ctx context.Context, mp *ipn.MaskedPrefs) (*ipn.Prefs, error)
+}
 
 // Fetcher retrieves live Tailscale status, preferring the LocalAPI socket
 // and falling back to shelling out to the tailscale CLI when the socket
 // is unreachable or the caller lacks permission to use it directly.
 type Fetcher struct {
-	lc *local.Client
+	lc localClient
 }
 
 func NewFetcher() *Fetcher {
@@ -32,6 +40,46 @@ func (f *Fetcher) Fetch(ctx context.Context) ([]Peer, *Peer, error) {
 		}
 	}
 	return peersFromStatus(status)
+}
+
+// SetExitNode configures peer as the exit node used for outbound internet
+// traffic.
+func (f *Fetcher) SetExitNode(ctx context.Context, peer Peer) error {
+	_, err := f.lc.EditPrefs(ctx, &ipn.MaskedPrefs{
+		Prefs:         ipn.Prefs{ExitNodeID: peer.ID},
+		ExitNodeIDSet: true,
+		ExitNodeIPSet: true, // clear any IP-based selection so ID wins
+	})
+	if err != nil {
+		return fmt.Errorf("set exit node: %w", err)
+	}
+	return nil
+}
+
+// ClearExitNode stops routing outbound internet traffic through an exit
+// node.
+func (f *Fetcher) ClearExitNode(ctx context.Context) error {
+	_, err := f.lc.EditPrefs(ctx, &ipn.MaskedPrefs{
+		ExitNodeIDSet: true,
+		ExitNodeIPSet: true,
+	})
+	if err != nil {
+		return fmt.Errorf("clear exit node: %w", err)
+	}
+	return nil
+}
+
+// SetExitNodeAllowLANAccess toggles whether locally accessible subnets are
+// routed directly rather than through the selected exit node.
+func (f *Fetcher) SetExitNodeAllowLANAccess(ctx context.Context, allow bool) error {
+	_, err := f.lc.EditPrefs(ctx, &ipn.MaskedPrefs{
+		Prefs:                     ipn.Prefs{ExitNodeAllowLANAccess: allow},
+		ExitNodeAllowLANAccessSet: true,
+	})
+	if err != nil {
+		return fmt.Errorf("set exit node allow-lan-access: %w", err)
+	}
+	return nil
 }
 
 func statusFromCLI(ctx context.Context) (*ipnstate.Status, error) {
@@ -70,13 +118,16 @@ func peersFromStatus(status *ipnstate.Status) ([]Peer, *Peer, error) {
 func fromPeerStatus(ps *ipnstate.PeerStatus) Peer {
 	ct, region := connTypeFromPeerStatus(ps)
 	return Peer{
-		HostName:   ps.HostName,
-		DNSName:    ps.DNSName,
-		OS:         ps.OS,
-		IPs:        ps.TailscaleIPs,
-		Online:     ps.Online,
-		ConnType:   ct,
-		DERPRegion: region,
+		ID:            ps.ID,
+		HostName:      ps.HostName,
+		DNSName:       ps.DNSName,
+		OS:            ps.OS,
+		IPs:           ps.TailscaleIPs,
+		Online:        ps.Online,
+		ConnType:      ct,
+		DERPRegion:    region,
+		IsExitNode:    ps.ExitNode,
+		CanBeExitNode: ps.ExitNodeOption,
 	}
 }
 

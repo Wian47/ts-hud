@@ -25,10 +25,22 @@ ts-hud
 | `/` | Fuzzy search by hostname, OS, or IP |
 | `esc` | Clear search and exit search mode |
 | `enter` | SSH into the selected online peer |
+| `x` | Open the exit node picker |
 | `r` | Manual refresh |
 | `q` / `ctrl+c` | Quit |
 
 Peers auto-refresh every 5 seconds by default.
+
+### Exit node picker
+
+Press `x` to open a list of peers advertising as exit nodes.
+
+| Key | Action |
+|---|---|
+| `j` / `k` | Move down / up |
+| `enter` | Select the highlighted peer as your exit node, or clear it via the `(none)` entry |
+| `l` | Toggle "allow LAN access" (applied when you select a node) |
+| `esc` / `x` | Cancel without changing anything |
 
 ## Flags
 

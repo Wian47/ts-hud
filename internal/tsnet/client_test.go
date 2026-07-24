@@ -1,18 +1,90 @@
 package tsnet
 
 import (
+	"context"
+	"errors"
 	"net/netip"
 	"testing"
 
+	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/types/key"
 )
+
+// fakeLocalClient substitutes for *local.Client in tests that exercise
+// EditPrefs-based operations without a real tailscaled socket.
+type fakeLocalClient struct {
+	editErr   error
+	gotMasked *ipn.MaskedPrefs
+}
+
+func (f *fakeLocalClient) Status(ctx context.Context) (*ipnstate.Status, error) {
+	return nil, errors.New("fakeLocalClient: Status not implemented")
+}
+
+func (f *fakeLocalClient) EditPrefs(ctx context.Context, mp *ipn.MaskedPrefs) (*ipn.Prefs, error) {
+	f.gotMasked = mp
+	if f.editErr != nil {
+		return nil, f.editErr
+	}
+	return &mp.Prefs, nil
+}
+
+func TestFetcherSetExitNode(t *testing.T) {
+	fake := &fakeLocalClient{}
+	f := &Fetcher{lc: fake}
+	peer := Peer{ID: "nodeid123", HostName: "exit-node"}
+
+	if err := f.SetExitNode(context.Background(), peer); err != nil {
+		t.Fatalf("SetExitNode() error = %v", err)
+	}
+	if fake.gotMasked == nil {
+		t.Fatal("EditPrefs was not called")
+	}
+	if !fake.gotMasked.ExitNodeIDSet || fake.gotMasked.ExitNodeID != peer.ID {
+		t.Errorf("gotMasked = %+v, want ExitNodeIDSet=true ExitNodeID=%q", fake.gotMasked, peer.ID)
+	}
+}
+
+func TestFetcherClearExitNode(t *testing.T) {
+	fake := &fakeLocalClient{}
+	f := &Fetcher{lc: fake}
+
+	if err := f.ClearExitNode(context.Background()); err != nil {
+		t.Fatalf("ClearExitNode() error = %v", err)
+	}
+	if fake.gotMasked == nil || !fake.gotMasked.ExitNodeIDSet || fake.gotMasked.ExitNodeID != "" {
+		t.Errorf("gotMasked = %+v, want ExitNodeIDSet=true ExitNodeID empty", fake.gotMasked)
+	}
+}
+
+func TestFetcherSetExitNodeAllowLANAccess(t *testing.T) {
+	fake := &fakeLocalClient{}
+	f := &Fetcher{lc: fake}
+
+	if err := f.SetExitNodeAllowLANAccess(context.Background(), true); err != nil {
+		t.Fatalf("SetExitNodeAllowLANAccess() error = %v", err)
+	}
+	if fake.gotMasked == nil || !fake.gotMasked.ExitNodeAllowLANAccessSet || !fake.gotMasked.ExitNodeAllowLANAccess {
+		t.Errorf("gotMasked = %+v, want ExitNodeAllowLANAccessSet=true ExitNodeAllowLANAccess=true", fake.gotMasked)
+	}
+}
+
+func TestFetcherSetExitNodePropagatesError(t *testing.T) {
+	fake := &fakeLocalClient{editErr: errors.New("boom")}
+	f := &Fetcher{lc: fake}
+
+	if err := f.SetExitNode(context.Background(), Peer{}); err == nil {
+		t.Fatal("SetExitNode() error = nil, want non-nil")
+	}
+}
 
 func TestPeersFromStatus(t *testing.T) {
 	directKey := key.NewNode().Public()
 	derpKey := key.NewNode().Public()
 	peerRelayKey := key.NewNode().Public()
 	offlineKey := key.NewNode().Public()
+	exitNodeKey := key.NewNode().Public()
 
 	status := &ipnstate.Status{
 		Self: &ipnstate.PeerStatus{
@@ -46,6 +118,14 @@ func TestPeersFromStatus(t *testing.T) {
 				TailscaleIPs: []netip.Addr{netip.MustParseAddr("100.64.0.5")},
 				Online:       false,
 			},
+			exitNodeKey: {
+				HostName:       "exit-node",
+				TailscaleIPs:   []netip.Addr{netip.MustParseAddr("100.64.0.6")},
+				Online:         true,
+				CurAddr:        "100.64.0.6:41641",
+				ExitNode:       true,
+				ExitNodeOption: true,
+			},
 		},
 	}
 
@@ -58,12 +138,12 @@ func TestPeersFromStatus(t *testing.T) {
 		t.Fatalf("self = %+v, want HostName self-node", self)
 	}
 
-	if len(peers) != 4 {
-		t.Fatalf("len(peers) = %d, want 4", len(peers))
+	if len(peers) != 5 {
+		t.Fatalf("len(peers) = %d, want 5", len(peers))
 	}
 
 	// peersFromStatus sorts by hostname.
-	wantOrder := []string{"derp-node", "direct-node", "offline-node", "relay-node"}
+	wantOrder := []string{"derp-node", "direct-node", "exit-node", "offline-node", "relay-node"}
 	for i, p := range peers {
 		if p.HostName != wantOrder[i] {
 			t.Fatalf("peers[%d].HostName = %q, want %q", i, p.HostName, wantOrder[i])
@@ -86,6 +166,12 @@ func TestPeersFromStatus(t *testing.T) {
 	}
 	if got := byHost["offline-node"]; got.Online || got.ConnType != ConnUnknown {
 		t.Errorf("offline-node = %+v, want Online=false ConnType=ConnUnknown", got)
+	}
+	if got := byHost["exit-node"]; !got.IsExitNode || !got.CanBeExitNode {
+		t.Errorf("exit-node = %+v, want IsExitNode=true CanBeExitNode=true", got)
+	}
+	if got := byHost["direct-node"]; got.IsExitNode || got.CanBeExitNode {
+		t.Errorf("direct-node = %+v, want IsExitNode=false CanBeExitNode=false", got)
 	}
 }
 
