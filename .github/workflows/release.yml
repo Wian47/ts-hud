@@ -36,9 +36,12 @@ jobs:
     needs: goreleaser
     runs-on: ubuntu-latest
     steps:
+      # No checkout: a real installer doesn't have this repo either. A
+      # generic recent Go relies on GOTOOLCHAIN=auto (the default) to fetch
+      # whatever version go.mod pins, same as any stranger's machine would.
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: stable
 
       - name: go install the just-pushed tag
         run: |
