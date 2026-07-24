@@ -3,6 +3,8 @@ package tsnet
 import (
 	"net/netip"
 	"strings"
+
+	"tailscale.com/tailcfg"
 )
 
 // ConnType describes how the local node currently reaches a peer.
@@ -30,6 +32,7 @@ func (c ConnType) String() string {
 
 // Peer is the subset of Tailscale peer state ts-hud renders and acts on.
 type Peer struct {
+	ID         tailcfg.StableNodeID
 	HostName   string
 	DNSName    string
 	OS         string
@@ -37,6 +40,13 @@ type Peer struct {
 	Online     bool
 	ConnType   ConnType
 	DERPRegion string
+
+	// IsExitNode reports whether this peer is the currently selected
+	// exit node for outbound internet traffic.
+	IsExitNode bool
+	// CanBeExitNode reports whether this peer has advertised itself as
+	// (and been approved as) an exit node option.
+	CanBeExitNode bool
 }
 
 // SSHTarget returns the address ts-hud should pass to the ssh binary,
