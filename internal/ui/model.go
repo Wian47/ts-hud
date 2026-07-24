@@ -96,22 +96,51 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
+	case "j", "down":
+		m.moveCursor(1)
+	case "k", "up":
+		m.moveCursor(-1)
+	case "g":
+		m.cursor = 0
+	case "G":
+		m.cursor = len(m.filtered) - 1
 	case "r":
 		return m, fetchCmd(m.fetcher)
 	}
+	m.clampCursor()
 	return m, nil
+}
+
+func (m *Model) clampCursor() {
+	if len(m.filtered) == 0 {
+		m.cursor = 0
+		return
+	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+	if m.cursor > len(m.filtered)-1 {
+		m.cursor = len(m.filtered) - 1
+	}
+}
+
+func (m *Model) moveCursor(delta int) {
+	m.cursor += delta
+	m.clampCursor()
+}
+
+func (m Model) selectedPeer() (tsnet.Peer, bool) {
+	if len(m.filtered) == 0 || m.cursor < 0 || m.cursor >= len(m.filtered) {
+		return tsnet.Peer{}, false
+	}
+	return m.filtered[m.cursor], true
 }
 
 // applyFilter recomputes the visible peer list. Until Task 5 adds live
 // search it simply mirrors peers, keeping the cursor in bounds.
 func (m *Model) applyFilter() {
 	m.filtered = m.peers
-	if m.cursor > len(m.filtered)-1 {
-		m.cursor = len(m.filtered) - 1
-	}
-	if m.cursor < 0 {
-		m.cursor = 0
-	}
+	m.clampCursor()
 }
 
 func (m Model) View() string {

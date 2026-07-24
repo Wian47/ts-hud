@@ -45,6 +45,38 @@ func TestViewRendersPeerTable(t *testing.T) {
 	}
 }
 
+func TestNavigationBounds(t *testing.T) {
+	m := newTestModel()
+
+	if m.cursor != 0 {
+		t.Fatalf("initial cursor = %d, want 0", m.cursor)
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	m = updated.(Model)
+	if m.cursor != 0 {
+		t.Fatalf("cursor after k at top = %d, want 0 (clamped)", m.cursor)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	m = updated.(Model)
+	if want := len(m.filtered) - 1; m.cursor != want {
+		t.Fatalf("cursor after G = %d, want %d", m.cursor, want)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = updated.(Model)
+	if want := len(m.filtered) - 1; m.cursor != want {
+		t.Fatalf("cursor after j at bottom = %d, want %d (clamped)", m.cursor, want)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	m = updated.(Model)
+	if m.cursor != 0 {
+		t.Fatalf("cursor after g = %d, want 0", m.cursor)
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (func() bool {
 		for i := 0; i+len(needle) <= len(haystack); i++ {
