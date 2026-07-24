@@ -223,5 +223,5 @@ func (m Model) renderHeader() string {
 	if len(m.self.IPs) > 0 {
 		ip = m.self.IPs[0].String()
 	}
-	return fmt.Sprintf("%s  self: %s (%s)  peers: %d", title, m.self.HostName, ip, len(m.peers))
+	return fmt.Sprintf("%s  self: %s (%s)  peers: %d", title, m.self.DisplayName(), ip, len(m.peers))
 }

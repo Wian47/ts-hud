@@ -157,6 +157,24 @@ func TestViewRendersErrorWithoutPanicking(t *testing.T) {
 	}
 }
 
+func TestRenderHeaderUsesSelfDisplayName(t *testing.T) {
+	m := newTestModel()
+	self := tsnet.Peer{
+		HostName: "fedora",
+		DNSName:  "acer-swift.tail865ddd.ts.net.",
+		IPs:      []netip.Addr{netip.MustParseAddr("100.64.0.9")},
+	}
+	m.self = &self
+
+	header := m.renderHeader()
+	if !contains(header, "acer-swift") {
+		t.Errorf("renderHeader() = %q, want it to contain self display name %q", header, "acer-swift")
+	}
+	if contains(header, "fedora") {
+		t.Errorf("renderHeader() = %q, should not show raw OS hostname %q", header, "fedora")
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (func() bool {
 		for i := 0; i+len(needle) <= len(haystack); i++ {
