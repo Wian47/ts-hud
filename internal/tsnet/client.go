@@ -56,7 +56,7 @@ func peersFromStatus(status *ipnstate.Status) ([]Peer, *Peer, error) {
 		peers = append(peers, fromPeerStatus(ps))
 	}
 	sort.Slice(peers, func(i, j int) bool {
-		return peers[i].HostName < peers[j].HostName
+		return peers[i].DisplayName() < peers[j].DisplayName()
 	})
 
 	var self *Peer

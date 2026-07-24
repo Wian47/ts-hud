@@ -82,3 +82,40 @@ func TestPeerMatchesQuery(t *testing.T) {
 		}
 	}
 }
+
+func TestPeerMatchesQueryUsesDisplayName(t *testing.T) {
+	// A peer's raw OS hostname can differ from (or collide with) its
+	// assigned Tailscale device name. Search should match what's shown.
+	p := Peer{HostName: "fedora", DNSName: "acer-swift.tail865ddd.ts.net."}
+
+	if !p.MatchesQuery("acer") {
+		t.Error("MatchesQuery(\"acer\") = false, want true (should match display name)")
+	}
+}
+
+func TestPeerDisplayName(t *testing.T) {
+	tests := []struct {
+		name string
+		peer Peer
+		want string
+	}{
+		{
+			name: "uses short label from DNS name when present",
+			peer: Peer{HostName: "fedora", DNSName: "acer-swift.tail865ddd.ts.net."},
+			want: "acer-swift",
+		},
+		{
+			name: "falls back to hostname when DNS name is empty",
+			peer: Peer{HostName: "build-server", DNSName: ""},
+			want: "build-server",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.peer.DisplayName(); got != tt.want {
+				t.Errorf("DisplayName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

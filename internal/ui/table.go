@@ -41,7 +41,7 @@ func renderTable(peers []tsnet.Peer, cursor int) string {
 
 		row := fmt.Sprintf(
 			"%s %s %s %s %s",
-			padRight(p.HostName, colHostWidth),
+			padRight(p.DisplayName(), colHostWidth),
 			padRight(ip, colIPWidth),
 			padRight(p.OS, colOSWidth),
 			status,
