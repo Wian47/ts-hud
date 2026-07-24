@@ -114,6 +114,33 @@ func TestFilterNarrowsListAndClampsCursor(t *testing.T) {
 	}
 }
 
+func TestEnterOnOfflinePeerIsNoop(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	m = updated.(Model)
+
+	if peer, ok := m.selectedPeer(); !ok || peer.HostName != "charlie" || peer.Online {
+		t.Fatalf("selectedPeer() = %+v, %v, want offline charlie", peer, ok)
+	}
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatal("Update(enter) on offline peer returned non-nil cmd, want nil")
+	}
+}
+
+func TestBuildSSHCommandPrefersDNSName(t *testing.T) {
+	peer := tsnet.Peer{
+		HostName: "bravo",
+		DNSName:  "bravo.tailnet-1234.ts.net.",
+		IPs:      []netip.Addr{netip.MustParseAddr("100.64.0.2")},
+	}
+	c := buildSSHCommand(peer)
+	if len(c.Args) != 2 || c.Args[0] != "ssh" || c.Args[1] != "bravo.tailnet-1234.ts.net" {
+		t.Fatalf("buildSSHCommand args = %v, want [ssh bravo.tailnet-1234.ts.net]", c.Args)
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (func() bool {
 		for i := 0; i+len(needle) <= len(haystack); i++ {

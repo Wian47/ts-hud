@@ -94,6 +94,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		return m, tea.Batch(fetchCmd(m.fetcher), tickCmd(m.refreshInterval))
 
+	case sshFinishedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+		}
+		return m, fetchCmd(m.fetcher)
+
 	case tea.KeyMsg:
 		if m.searching {
 			return m.updateSearch(msg)
@@ -120,6 +126,10 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searching = true
 		m.searchInput.Focus()
 		return m, nil
+	case "enter":
+		if peer, ok := m.selectedPeer(); ok && peer.Online {
+			return m, sshCmd(peer)
+		}
 	case "r":
 		return m, fetchCmd(m.fetcher)
 	}
@@ -198,7 +208,7 @@ func (m Model) View() string {
 	case m.err != nil:
 		b.WriteString(errorStyle.Render("error: " + m.err.Error()))
 	default:
-		b.WriteString(helpStyle.Render("j/k move  g/G top/bottom  / search  r refresh  q quit"))
+		b.WriteString(helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  r refresh  q quit"))
 	}
 
 	return b.String()
