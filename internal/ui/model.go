@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Wian47/ts-hud/internal/tsnet"
@@ -31,14 +32,22 @@ type Model struct {
 	cursor   int
 	err      error
 
+	searching   bool
+	searchInput textinput.Model
+
 	width  int
 	height int
 }
 
 func NewModel(fetcher *tsnet.Fetcher, refreshInterval time.Duration) Model {
+	input := textinput.New()
+	input.Prompt = "/"
+	input.CharLimit = 64
+
 	return Model{
 		fetcher:         fetcher,
 		refreshInterval: refreshInterval,
+		searchInput:     input,
 	}
 }
 
@@ -86,6 +95,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(fetchCmd(m.fetcher), tickCmd(m.refreshInterval))
 
 	case tea.KeyMsg:
+		if m.searching {
+			return m.updateSearch(msg)
+		}
 		return m.updateNormal(msg)
 	}
 
@@ -104,11 +116,35 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 	case "G":
 		m.cursor = len(m.filtered) - 1
+	case "/":
+		m.searching = true
+		m.searchInput.Focus()
+		return m, nil
 	case "r":
 		return m, fetchCmd(m.fetcher)
 	}
 	m.clampCursor()
 	return m, nil
+}
+
+func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.searching = false
+		m.searchInput.Blur()
+		m.searchInput.SetValue("")
+		m.applyFilter()
+		return m, nil
+	case "enter":
+		m.searching = false
+		m.searchInput.Blur()
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.searchInput, cmd = m.searchInput.Update(msg)
+	m.applyFilter()
+	return m, cmd
 }
 
 func (m *Model) clampCursor() {
@@ -136,10 +172,15 @@ func (m Model) selectedPeer() (tsnet.Peer, bool) {
 	return m.filtered[m.cursor], true
 }
 
-// applyFilter recomputes the visible peer list. Until Task 5 adds live
-// search it simply mirrors peers, keeping the cursor in bounds.
 func (m *Model) applyFilter() {
-	m.filtered = m.peers
+	query := m.searchInput.Value()
+	filtered := make([]tsnet.Peer, 0, len(m.peers))
+	for _, p := range m.peers {
+		if p.MatchesQuery(query) {
+			filtered = append(filtered, p)
+		}
+	}
+	m.filtered = filtered
 	m.clampCursor()
 }
 
@@ -151,10 +192,13 @@ func (m Model) View() string {
 	b.WriteString(renderTable(m.filtered, m.cursor))
 	b.WriteString("\n\n")
 
-	if m.err != nil {
+	switch {
+	case m.searching:
+		b.WriteString(searchPromptStyle.Render("search: ") + m.searchInput.View())
+	case m.err != nil:
 		b.WriteString(errorStyle.Render("error: " + m.err.Error()))
-	} else {
-		b.WriteString(helpStyle.Render("r refresh  q quit"))
+	default:
+		b.WriteString(helpStyle.Render("j/k move  g/G top/bottom  / search  r refresh  q quit"))
 	}
 
 	return b.String()

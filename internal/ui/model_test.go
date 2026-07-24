@@ -77,6 +77,43 @@ func TestNavigationBounds(t *testing.T) {
 	}
 }
 
+func TestFilterNarrowsListAndClampsCursor(t *testing.T) {
+	m := newTestModel()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	m = updated.(Model)
+	if m.cursor != 2 {
+		t.Fatalf("cursor after G = %d, want 2", m.cursor)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	if !m.searching {
+		t.Fatal("searching = false after '/', want true")
+	}
+
+	for _, r := range "windows" {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(Model)
+	}
+
+	if len(m.filtered) != 1 || m.filtered[0].HostName != "charlie" {
+		t.Fatalf("filtered = %+v, want only charlie", m.filtered)
+	}
+	if m.cursor != 0 {
+		t.Fatalf("cursor after filter shrank list = %d, want 0", m.cursor)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	if m.searching {
+		t.Fatal("searching = true after esc, want false")
+	}
+	if len(m.filtered) != len(m.peers) {
+		t.Fatalf("filtered len = %d after esc, want %d (query cleared)", len(m.filtered), len(m.peers))
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (func() bool {
 		for i := 0; i+len(needle) <= len(haystack); i++ {
