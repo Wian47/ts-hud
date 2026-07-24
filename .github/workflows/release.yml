@@ -27,3 +27,30 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  install-smoke-test:
+    # Proves `go install github.com/Wian47/ts-hud@<tag>` actually works for a
+    # fresh install, on a clean runner unrelated to the release build above,
+    # using the real public module proxy/checksum db. Runs after goreleaser
+    # so a broken install can't hide behind an otherwise-green release.
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: go install the just-pushed tag
+        run: |
+          go install "github.com/Wian47/ts-hud@${{ github.ref_name }}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: verify --version reports the installed tag
+        run: |
+          got="$(ts-hud --version)"
+          want="ts-hud ${{ github.ref_name }}"
+          if [ "$got" != "$want" ]; then
+            echo "::error::go install smoke test failed: got '$got', want '$want'"
+            exit 1
+          fi
+          echo "OK: $got"
