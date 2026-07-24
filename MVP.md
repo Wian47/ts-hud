@@ -43,7 +43,7 @@ Deliver a blazing-fast, terminal-native dashboard that gives instantaneous visib
 ---
 
 ## 🛠️ Definition of Done (MVP Release Checklist)
-- [ ] Binary compiles cleanly with zero CGO dependencies (`CGO_ENABLED=0 go build`).
-- [ ] Handles offline or unauthenticated Tailscale state gracefully without crashing.
-- [ ] Launches in under 15ms.
-- [ ] Includes `goreleaser` setup for automated GitHub binary releases (Linux/macOS/BSD).
+- [x] Binary compiles cleanly with zero CGO dependencies (`CGO_ENABLED=0 go build`).
+- [x] Handles offline or unauthenticated Tailscale state gracefully without crashing.
+- [x] Launches in under 15ms.
+- [x] Includes `goreleaser` setup for automated GitHub binary releases (Linux/macOS/BSD).
