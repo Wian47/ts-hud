@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -295,31 +294,26 @@ func (m *Model) applyFilter() {
 }
 
 func (m Model) View() string {
-	var b strings.Builder
+	width := contentWidth(m.width)
+	header := m.renderHeader()
 
-	b.WriteString(m.renderHeader())
-	b.WriteString("\n\n")
-
+	var body, footer string
 	if m.pickingExitNode {
-		b.WriteString(renderExitNodePicker(m.exitNodeCandidates(), m.exitNodeCursor, m.allowLANAccess))
-		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render("j/k move  enter select  l toggle LAN access  esc cancel"))
-		return b.String()
+		body = renderExitNodePicker(m.exitNodeCandidates(), m.exitNodeCursor, m.allowLANAccess, width)
+		footer = helpStyle.Render("j/k move  enter select  l toggle LAN access  esc cancel")
+	} else {
+		body = renderTable(m.filtered, m.cursor, width)
+		switch {
+		case m.searching:
+			footer = searchPromptStyle.Render("search: ") + m.searchInput.View()
+		case m.err != nil:
+			footer = errorStyle.Render("error: " + m.err.Error())
+		default:
+			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  r refresh  q quit")
+		}
 	}
 
-	b.WriteString(renderTable(m.filtered, m.cursor))
-	b.WriteString("\n\n")
-
-	switch {
-	case m.searching:
-		b.WriteString(searchPromptStyle.Render("search: ") + m.searchInput.View())
-	case m.err != nil:
-		b.WriteString(errorStyle.Render("error: " + m.err.Error()))
-	default:
-		b.WriteString(helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  r refresh  q quit"))
-	}
-
-	return b.String()
+	return renderFrame(m.width, m.height, header, body, footer)
 }
 
 func (m Model) renderHeader() string {

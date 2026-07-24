@@ -3,10 +3,12 @@ package ui
 import (
 	"errors"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Wian47/ts-hud/internal/tsnet"
 )
@@ -293,6 +295,43 @@ func TestViewRendersExitNodePicker(t *testing.T) {
 	if contains(view, "charlie") {
 		t.Errorf("View() should not list charlie (not exit-node eligible)\n---\n%s", view)
 	}
+}
+
+func TestViewIsFramedWithRoundedBorder(t *testing.T) {
+	m := newTestModel()
+	view := m.View()
+	for _, want := range []string{"╭", "╮", "╰", "╯", "├", "┤"} {
+		if !contains(view, want) {
+			t.Errorf("View() missing border rune %q\n---\n%s", want, view)
+		}
+	}
+}
+
+func TestViewFillsWindowDimensions(t *testing.T) {
+	m := newTestModel()
+	m.width = 60
+	m.height = 20
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+	if len(lines) != m.height {
+		t.Fatalf("View() produced %d lines, want %d (m.height)", len(lines), m.height)
+	}
+	for i, line := range lines {
+		if w := lipgloss.Width(line); w != m.width {
+			t.Fatalf("line %d width = %d, want %d (m.width)\nline: %q", i, w, m.width, line)
+		}
+	}
+	if !strings.HasPrefix(lines[len(lines)-1], "╰") {
+		t.Errorf("last line = %q, want it to start with the bottom border corner", lines[len(lines)-1])
+	}
+}
+
+func TestViewHandlesTinyDimensionsWithoutPanicking(t *testing.T) {
+	m := newTestModel()
+	m.width = 1
+	m.height = 1
+	_ = m.View() // must not panic
 }
 
 func contains(haystack, needle string) bool {
