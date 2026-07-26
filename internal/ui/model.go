@@ -50,6 +50,10 @@ type Model struct {
 	derpLoading bool
 	derpErr     error
 
+	viewingSSH bool
+	sshPane    *sshPane
+	spawner    ptySpawner
+
 	width  int
 	height int
 }
@@ -63,6 +67,7 @@ func NewModel(fetcher *tsnet.Fetcher, refreshInterval time.Duration) Model {
 		fetcher:         fetcher,
 		refreshInterval: refreshInterval,
 		searchInput:     input,
+		spawner:         realPTYSpawner{},
 	}
 }
 
@@ -143,12 +148,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		return m, tea.Batch(fetchCmd(m.fetcher), tickCmd(m.refreshInterval))
 
-	case sshFinishedMsg:
-		if msg.err != nil {
-			m.err = msg.err
-		}
-		return m, fetchCmd(m.fetcher)
-
 	case exitNodeResultMsg:
 		if msg.err != nil {
 			m.err = msg.err
@@ -161,6 +160,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.derpErr = msg.err
 		return m, nil
 
+	case sshStartedMsg:
+		if !m.viewingSSH {
+			// Detached before the spawn finished; don't leave an orphaned
+			// session running with nobody driving it.
+			if msg.pane != nil {
+				msg.pane.close()
+			}
+			return m, nil
+		}
+		if msg.err != nil {
+			m.viewingSSH = false
+			m.err = msg.err
+			return m, nil
+		}
+		m.sshPane = msg.pane
+		return m, waitForPTYOutput(m.sshPane)
+
+	case sshOutputMsg:
+		if m.sshPane != nil {
+			_, _ = m.sshPane.term.Write(msg.data)
+			return m, waitForPTYOutput(m.sshPane)
+		}
+		return m, nil
+
+	case sshClosedMsg:
+		if m.sshPane != nil {
+			m.sshPane.close()
+		}
+		m.viewingSSH = false
+		m.sshPane = nil
+		return m, fetchCmd(m.fetcher)
+
 	case tea.KeyMsg:
 		switch {
 		case m.searching:
@@ -169,6 +200,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateExitNodePicker(msg)
 		case m.viewingDERP:
 			return m.updateDERPView(msg)
+		case m.viewingSSH:
+			return m.updateSSHPane(msg)
 		default:
 			return m.updateNormal(msg)
 		}
@@ -195,7 +228,10 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		if peer, ok := m.selectedPeer(); ok && peer.Online {
-			return m, sshCmd(peer)
+			m.viewingSSH = true
+			m.err = nil
+			cols, rows := contentWidth(m.width), contentHeight(m.height)
+			return m, startSSHPaneCmd(m.spawner, peer, cols, rows)
 		}
 	case "r":
 		return m, fetchCmd(m.fetcher)
@@ -222,6 +258,23 @@ func (m Model) updateDERPView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.derpLoading = true
 		m.derpErr = nil
 		return m, derpCheckCmd(m.fetcher)
+	}
+	return m, nil
+}
+
+func (m Model) updateSSHPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyCtrlQ {
+		if m.sshPane != nil {
+			m.sshPane.close()
+		}
+		m.viewingSSH = false
+		m.sshPane = nil
+		return m, fetchCmd(m.fetcher)
+	}
+	if m.sshPane != nil {
+		if b := keyMsgToBytes(msg); len(b) > 0 {
+			_, _ = m.sshPane.sess.Write(b)
+		}
 	}
 	return m, nil
 }
