@@ -220,3 +220,37 @@ func TestEnterOnOnlinePeerStartsSSHPane(t *testing.T) {
 		t.Fatal("Update(enter) returned nil cmd, want startSSHPaneCmd")
 	}
 }
+
+func TestWindowResizeWhileSSHActiveResizesPaneAndSession(t *testing.T) {
+	sess := newFakePTYSession()
+	pane := &sshPane{sess: sess, term: vt.NewSafeEmulator(80, 24), output: make(chan []byte), done: make(chan struct{})}
+
+	m := newTestModel()
+	m.viewingSSH = true
+	m.sshPane = pane
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = updated.(Model)
+
+	wantCols, wantRows := contentWidth(100), contentHeight(40)
+	if m.sshPane.term.Width() != wantCols || m.sshPane.term.Height() != wantRows {
+		t.Errorf("emulator size = %dx%d, want %dx%d", m.sshPane.term.Width(), m.sshPane.term.Height(), wantCols, wantRows)
+	}
+	if len(sess.sizes) != 1 || sess.sizes[0] != [2]int{wantRows, wantCols} {
+		t.Errorf("Setsize calls = %v, want [[%d %d]]", sess.sizes, wantRows, wantCols)
+	}
+}
+
+func TestWindowResizeWithNoActiveSSHPaneIsNoop(t *testing.T) {
+	m := newTestModel()
+
+	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = updated.(Model)
+
+	if m.width != 100 || m.height != 40 {
+		t.Errorf("m.width/height = %d/%d, want 100/40", m.width, m.height)
+	}
+	if cmd != nil {
+		t.Error("cmd != nil, want nil")
+	}
+}

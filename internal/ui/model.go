@@ -132,6 +132,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.viewingSSH && m.sshPane != nil {
+			cols, rows := contentWidth(m.width), contentHeight(m.height)
+			m.sshPane.term.Resize(cols, rows)
+			_ = m.sshPane.sess.Setsize(rows, cols)
+		}
 		return m, nil
 
 	case peersMsg:
