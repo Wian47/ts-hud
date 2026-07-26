@@ -34,6 +34,24 @@ func contentWidth(termWidth int) int {
 	return w
 }
 
+// contentHeight returns how many terminal rows are available for body
+// content inside a frame of the given terminal height, assuming a
+// single-line header and a single-line footer (true for every caller in
+// this package). Callers that need to size body content exactly — like a
+// live-rendered ssh pane — use this instead of letting renderFrame pad
+// with blank lines.
+func contentHeight(termHeight int) int {
+	if termHeight <= 0 {
+		termHeight = defaultTermHeight
+	}
+	// 2 border rows + 2 divider rows + 1 header row + 1 footer row.
+	h := termHeight - 6
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
 // renderFrame wraps header/body/footer in a rounded border sized to fill
 // the terminal. body is padded with blank lines so footer stays pinned to
 // the bottom of the frame regardless of how many rows body actually has.
