@@ -400,6 +400,9 @@ func (m Model) View() string {
 
 	var body, footer string
 	switch {
+	case m.viewingSSH:
+		body = renderSSHPane(m.sshPane)
+		footer = helpStyle.Render("ctrl+q detach")
 	case m.pickingExitNode:
 		body = renderExitNodePicker(m.exitNodeCandidates(), m.exitNodeCursor, m.allowLANAccess, width)
 		footer = helpStyle.Render("j/k move  enter select  l toggle LAN access  esc cancel")

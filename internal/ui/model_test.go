@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/vt"
 
 	"github.com/Wian47/ts-hud/internal/tsnet"
 )
@@ -419,6 +420,28 @@ func TestViewHandlesTinyDimensionsWithoutPanicking(t *testing.T) {
 	m.width = 1
 	m.height = 1
 	_ = m.View() // must not panic
+}
+
+func TestViewRendersSSHPaneConnectingState(t *testing.T) {
+	m := newTestModel()
+	m.viewingSSH = true
+
+	view := m.View()
+	if !contains(view, "connecting") {
+		t.Errorf("View() missing connecting indicator\n---\n%s", view)
+	}
+}
+
+func TestViewRendersSSHPaneOutput(t *testing.T) {
+	m := newTestModel()
+	m.viewingSSH = true
+	m.sshPane = &sshPane{term: vt.NewSafeEmulator(80, 24), output: make(chan []byte), done: make(chan struct{})}
+	m.sshPane.term.Write([]byte("remote-shell-prompt$"))
+
+	view := m.View()
+	if !contains(view, "remote-shell-prompt$") {
+		t.Errorf("View() missing pty output\n---\n%s", view)
+	}
 }
 
 func contains(haystack, needle string) bool {

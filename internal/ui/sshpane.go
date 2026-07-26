@@ -116,3 +116,13 @@ func waitForPTYOutput(pane *sshPane) tea.Cmd {
 		return sshOutputMsg{data: data}
 	}
 }
+
+// renderSSHPane returns the frame body for the embedded ssh view: a
+// connecting indicator before the pane is ready, otherwise the terminal
+// emulator's current screen contents.
+func renderSSHPane(pane *sshPane) string {
+	if pane == nil {
+		return helpStyle.Render("connecting…")
+	}
+	return pane.term.Render()
+}
