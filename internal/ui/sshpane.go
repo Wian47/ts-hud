@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"io"
 	"os/exec"
 	"sync"
 
@@ -21,14 +22,33 @@ type sshPane struct {
 	closeOnce sync.Once
 }
 
-// close kills/reaps the underlying process and unblocks the read pump. Safe
-// to call more than once (natural remote exit and manual detach can both
-// reach it).
+// close kills/reaps the underlying process and unblocks both background
+// goroutines: the read pump (via done) and the reply drain (via the
+// emulator's reply pipe). Safe to call more than once (natural remote exit
+// and manual detach can both reach it).
 func (p *sshPane) close() {
 	p.closeOnce.Do(func() {
 		close(p.done)
 		_ = p.sess.Close()
+		closeTerminalReplyPipe(p.term)
 	})
+}
+
+// closeTerminalReplyPipe closes the write half of the emulator's reply pipe,
+// which makes the pending Read in drainTerminalReplies return io.EOF so that
+// goroutine exits instead of leaking for the life of the process.
+//
+// It deliberately avoids vt's own (*Emulator).Close: that flips an
+// unsynchronized `closed` bool which (*Emulator).Read also reads, and
+// SafeEmulator guards neither method, so calling it while the drain
+// goroutine sits in Read is a data race — `go test -race` flags it. Closing
+// the pipe writer has the same effect (pending and subsequent reads end, and
+// the emulator's reply writes fail fast instead of blocking) and io.Pipe is
+// internally synchronized.
+func closeTerminalReplyPipe(term *vt.SafeEmulator) {
+	if pw, ok := term.InputPipe().(io.Closer); ok {
+		_ = pw.Close()
+	}
 }
 
 // sshStartedMsg carries the result of spawning an ssh session: either a
@@ -42,14 +62,22 @@ type sshStartedMsg struct {
 }
 
 // sshOutputMsg carries one chunk of raw bytes read from the pty master.
-type sshOutputMsg struct{ data []byte }
+// pane identifies which session produced the chunk: messages are delivered
+// asynchronously, so one can still arrive from a pane that has already been
+// detached and replaced. Update drops those instead of writing them into
+// whatever pane happens to be current.
+type sshOutputMsg struct {
+	pane *sshPane
+	data []byte
+}
 
 // sshClosedMsg is sent once the pty read loop ends, whether because the
 // remote process exited or the session was closed locally. It carries no
 // error: on Linux, reading a pty out from under an exited/closed process
 // typically surfaces as EIO, which is the *normal* exit signal here, not a
-// user-facing failure.
-type sshClosedMsg struct{}
+// user-facing failure. As with sshOutputMsg, pane identifies the session it
+// came from so a late close from an old pane can't tear down a new one.
+type sshClosedMsg struct{ pane *sshPane }
 
 // buildSSHCommand returns the command ts-hud runs to ssh into peer.
 func buildSSHCommand(peer tsnet.Peer) *exec.Cmd {
@@ -76,6 +104,7 @@ func startSSHPaneCmd(spawner ptySpawner, peer tsnet.Peer, cols, rows int) tea.Cm
 			done:   make(chan struct{}),
 		}
 		go pumpPTYOutput(pane)
+		go drainTerminalReplies(pane)
 		return sshStartedMsg{pane: pane}
 	}
 }
@@ -104,6 +133,23 @@ func pumpPTYOutput(pane *sshPane) {
 	}
 }
 
+// drainTerminalReplies forwards the emulator's answers to terminal queries
+// back into the pty, where the remote program that asked is waiting for
+// them (DA1/DA2 device attributes, cursor position reports, OSC color
+// queries, DECRQM).
+//
+// This is not optional plumbing: vt writes those replies into an unbuffered
+// pipe from inside Emulator.Write, so with nobody reading the pipe the first
+// query byte sequence a remote program sends blocks Write forever. That
+// Write runs on the Bubble Tea update goroutine while holding the
+// SafeEmulator's write lock, so View()'s Render() blocks too — the whole TUI
+// freezes with no way to detach. SafeEmulator.Read takes no lock, so this
+// cannot contend with Write or Render. It returns once close() closes the
+// emulator.
+func drainTerminalReplies(pane *sshPane) {
+	_, _ = io.Copy(pane.sess, pane.term)
+}
+
 // waitForPTYOutput blocks for the next chunk (or close) from pane's read
 // pump, translating it into a Bubble Tea message. Update re-issues this
 // after every sshOutputMsg to keep draining the pump.
@@ -111,9 +157,9 @@ func waitForPTYOutput(pane *sshPane) tea.Cmd {
 	return func() tea.Msg {
 		data, ok := <-pane.output
 		if !ok {
-			return sshClosedMsg{}
+			return sshClosedMsg{pane: pane}
 		}
-		return sshOutputMsg{data: data}
+		return sshOutputMsg{pane: pane, data: data}
 	}
 }
 

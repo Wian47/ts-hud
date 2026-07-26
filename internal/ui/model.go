@@ -179,20 +179,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 			return m, nil
 		}
+		if m.sshPane != nil {
+			// A session is already live, so this spawn is redundant.
+			// updateNormal/updateSSHPane shouldn't let it happen, but never
+			// overwrite a live pane — that would leak its process, pty and
+			// goroutines with nothing left holding a reference to close them.
+			msg.pane.close()
+			return m, nil
+		}
 		m.sshPane = msg.pane
 		return m, waitForPTYOutput(m.sshPane)
 
 	case sshOutputMsg:
-		if m.sshPane != nil {
-			_, _ = m.sshPane.term.Write(msg.data)
-			return m, waitForPTYOutput(m.sshPane)
+		// Stale chunk from a pane that has already been detached or
+		// replaced: dropping it keeps a dead session's output out of the
+		// current pane's emulator. Its own pump is independent, so there is
+		// nothing to re-arm here either.
+		if msg.pane == nil || msg.pane != m.sshPane {
+			return m, nil
 		}
-		return m, nil
+		_, _ = m.sshPane.term.Write(msg.data)
+		return m, waitForPTYOutput(m.sshPane)
 
 	case sshClosedMsg:
-		if m.sshPane != nil {
-			m.sshPane.close()
+		// Likewise: a late close from an old pane must not tear down the
+		// session the user is currently looking at.
+		if msg.pane == nil || msg.pane != m.sshPane {
+			return m, nil
 		}
+		m.sshPane.close()
 		m.viewingSSH = false
 		m.sshPane = nil
 		return m, fetchCmd(m.fetcher)
