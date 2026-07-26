@@ -24,7 +24,7 @@ ts-hud
 | `g` / `G` | Jump to top / bottom |
 | `/` | Fuzzy search by hostname, OS, or IP |
 | `esc` | Clear search and exit search mode |
-| `enter` | SSH into the selected online peer |
+| `enter` | SSH into the selected online peer, embedded in the TUI |
 | `x` | Open the exit node picker |
 | `d` | Open the DERP latency matrix |
 | `r` | Manual refresh |
@@ -42,6 +42,20 @@ Press `x` to open a list of peers advertising as exit nodes.
 | `enter` | Select the highlighted peer as your exit node, or clear it via the `(none)` entry |
 | `l` | Toggle "allow LAN access" (applied when you select a node) |
 | `esc` / `x` | Cancel without changing anything |
+
+### Embedded ssh session
+
+Press `enter` on an online peer to ssh into it — the session runs live
+inside the ts-hud frame (header/footer chrome stays put), not as a
+separate full-terminal handoff.
+
+| Key | Action |
+|---|---|
+| `ctrl+q` | Detach — ends the ssh session and returns to the peer table |
+
+Detaching (or the remote session ending on its own) always terminates that
+ssh connection; there's no background/reattach. Resizing your terminal
+while connected resizes the remote session too.
 
 ### DERP latency matrix
 

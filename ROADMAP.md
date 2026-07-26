@@ -15,7 +15,7 @@
 *Focus: Read-only network visibility and instant client actions.*
 
 * **Status Dashboard & Search:** Filter peers by tag, OS, online state, or IP subnet.
-* **Seamless SSH Integration:** Execute SSH sessions directly into peers with automatic port/user detection.
+* **Seamless SSH Integration:** Execute SSH sessions directly into peers with automatic port/user detection, running embedded live inside the TUI frame (not a full-terminal handoff).
 * **Self-Node Telemetry:** Inspect local machine's public IP mapping, Hairpinning support, and PortMapping types (UPnP, NAT-PMP, PCP).
 * **Lightweight Binary Distribution:** Native support for Linux (x86/ARM), macOS, and FreeBSD.
 
