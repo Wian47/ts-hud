@@ -1,8 +1,22 @@
 # ts-hud
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/Wian47/ts-hud)](https://goreportcard.com/report/github.com/Wian47/ts-hud)
+[![Release](https://img.shields.io/github/v/release/Wian47/ts-hud)](https://github.com/Wian47/ts-hud/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/Wian47/ts-hud)](go.mod)
+[![License: MIT](https://img.shields.io/github/license/Wian47/ts-hud)](LICENSE)
+
 A blazing-fast, terminal-native dashboard for your Tailscale mesh network.
 Replaces `tailscale status`, adds instant fuzzy search, and lets you SSH
 into any peer with one keystroke.
+
+<!-- TODO: demo GIF/asciinema cast here -->
+
+## Why not just `tailscale status`?
+
+- **Live, searchable, keyboard-driven** — fuzzy-filter peers by hostname, OS, or IP as you type, instead of scrolling a flat text dump.
+- **SSH in one keystroke** — `enter` on a peer drops you into an embedded ssh session, live inside the same frame, not a separate terminal handoff.
+- **Built-in diagnostics** — a DERP latency matrix with a UDP/NAT connectivity verdict (`d`), and an exit-node switcher (`x`), no `tailscale` subcommands to memorize.
+- **Auto-refreshing** — the peer table updates itself every 5 seconds; no re-running a command to see what changed.
 
 ## Install
 
@@ -98,3 +112,18 @@ make build
 ```
 
 Requires Go 1.26.4+ (see `go.mod` — `tailscale.com` itself requires it).
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for what's planned next (Taildrop TUI, Serve/Funnel
+manager, key expiry warnings, and more).
+
+## Contributing
+
+Issues and PRs welcome — this is a young project and feedback on what's
+actually useful day-to-day is worth more than feature requests in the
+abstract.
+
+## License
+
+[MIT](LICENSE)
