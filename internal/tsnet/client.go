@@ -20,6 +20,7 @@ import (
 type localClient interface {
 	Status(ctx context.Context) (*ipnstate.Status, error)
 	EditPrefs(ctx context.Context, mp *ipn.MaskedPrefs) (*ipn.Prefs, error)
+	GetPrefs(ctx context.Context) (*ipn.Prefs, error)
 	CurrentDERPMap(ctx context.Context) (*tailcfg.DERPMap, error)
 	Ping(ctx context.Context, ip netip.Addr, pingtype tailcfg.PingType) (*ipnstate.PingResult, error)
 	WhoIs(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error)
