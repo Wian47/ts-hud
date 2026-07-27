@@ -444,6 +444,95 @@ func TestViewRendersSSHPaneOutput(t *testing.T) {
 	}
 }
 
+func TestPeerDetailOpensForSelectedPeerIncludingOffline(t *testing.T) {
+	m := newTestModel()
+	m.cursor = 2 // charlie, offline
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	m = updated.(Model)
+
+	if !m.viewingPeerDetail {
+		t.Fatal("viewingPeerDetail = false after 'i' on an offline peer, want true")
+	}
+	if m.peerDetailTarget.HostName != "charlie" {
+		t.Errorf("peerDetailTarget.HostName = %q, want %q", m.peerDetailTarget.HostName, "charlie")
+	}
+	if !m.peerDetailLoading {
+		t.Fatal("peerDetailLoading = false immediately after 'i', want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update('i') returned nil cmd, want a peer-detail probe command")
+	}
+}
+
+func TestPeerDetailEscCloses(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+
+	if m.viewingPeerDetail {
+		t.Fatal("viewingPeerDetail = true after esc, want false")
+	}
+}
+
+func TestPeerDetailReportMsgClearsLoading(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	m = updated.(Model)
+
+	result := tsnet.PeerDetail{Owner: "Alice Smith", Tags: []string{"tag:server"}}
+	updated, _ = m.Update(peerDetailReportMsg{result: result})
+	m = updated.(Model)
+
+	if m.peerDetailLoading {
+		t.Fatal("peerDetailLoading = true after peerDetailReportMsg, want false")
+	}
+	view := m.View()
+	if !contains(view, "Alice Smith") {
+		t.Errorf("View() missing owner\n---\n%s", view)
+	}
+}
+
+func TestPeerDetailTargetSurvivesBackgroundPeerRefresh(t *testing.T) {
+	m := newTestModel()
+	m.cursor = 0 // bravo
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	m = updated.(Model)
+
+	// Simulate the background auto-refresh reordering the peer list while
+	// the detail view is open.
+	updated, _ = m.Update(peersMsg{peers: []tsnet.Peer{
+		{HostName: "alpha", OS: "linux", Online: true, IPs: []netip.Addr{netip.MustParseAddr("100.64.0.1")}},
+		{HostName: "bravo", OS: "linux", Online: false, IPs: []netip.Addr{netip.MustParseAddr("100.64.0.2")}},
+	}})
+	m = updated.(Model)
+
+	if m.peerDetailTarget.HostName != "bravo" {
+		t.Errorf("peerDetailTarget.HostName = %q after background refresh, want %q (should stay pinned to the peer the view was opened for)", m.peerDetailTarget.HostName, "bravo")
+	}
+}
+
+func TestPeerDetailRefreshRetriggersProbe(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	m = updated.(Model)
+	updated, _ = m.Update(peerDetailReportMsg{result: tsnet.PeerDetail{Owner: "Alice"}})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m = updated.(Model)
+
+	if !m.peerDetailLoading {
+		t.Fatal("peerDetailLoading = false after 'r' in peer detail view, want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update('r') in peer detail view returned nil cmd, want a probe command")
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (func() bool {
 		for i := 0; i+len(needle) <= len(haystack); i++ {
