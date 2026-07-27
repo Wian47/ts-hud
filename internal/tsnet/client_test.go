@@ -29,6 +29,14 @@ type fakeLocalClient struct {
 	pingErr     error
 	whoIsResult *apitype.WhoIsResponse
 	whoIsErr    error
+
+	profileStatusCurrent ipn.LoginProfile
+	profileStatusAll     []ipn.LoginProfile
+	profileStatusErr     error
+
+	switchProfileErr       error
+	switchProfileGotID     ipn.ProfileID
+	switchProfileCallCount int
 }
 
 func (f *fakeLocalClient) Status(ctx context.Context) (*ipnstate.Status, error) {
@@ -58,6 +66,16 @@ func (f *fakeLocalClient) Ping(ctx context.Context, ip netip.Addr, pingtype tail
 
 func (f *fakeLocalClient) WhoIs(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
 	return f.whoIsResult, f.whoIsErr
+}
+
+func (f *fakeLocalClient) ProfileStatus(ctx context.Context) (ipn.LoginProfile, []ipn.LoginProfile, error) {
+	return f.profileStatusCurrent, f.profileStatusAll, f.profileStatusErr
+}
+
+func (f *fakeLocalClient) SwitchProfile(ctx context.Context, profile ipn.ProfileID) error {
+	f.switchProfileGotID = profile
+	f.switchProfileCallCount++
+	return f.switchProfileErr
 }
 
 func TestFetcherSetExitNode(t *testing.T) {

@@ -24,6 +24,8 @@ type localClient interface {
 	CurrentDERPMap(ctx context.Context) (*tailcfg.DERPMap, error)
 	Ping(ctx context.Context, ip netip.Addr, pingtype tailcfg.PingType) (*ipnstate.PingResult, error)
 	WhoIs(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error)
+	ProfileStatus(ctx context.Context) (current ipn.LoginProfile, all []ipn.LoginProfile, err error)
+	SwitchProfile(ctx context.Context, profile ipn.ProfileID) error
 }
 
 // Fetcher retrieves live Tailscale status, preferring the LocalAPI socket
