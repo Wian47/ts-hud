@@ -59,6 +59,9 @@ func renderDERPTable(result tsnet.NetCheckResult, loading bool, checkErr error, 
 
 		style := rowStyle
 		if r.Preferred {
+			// Same trick as the peer table's selected row: fit to an exact
+			// width *before* styling, since lipgloss's Style.Width() would
+			// word-wrap rather than pad a row that's shorter than width.
 			row = fitWidth(row, width)
 			style = selectedRowStyle
 		}
@@ -77,11 +80,11 @@ func connectivitySummary(result tsnet.NetCheckResult) string {
 	case !result.UDP:
 		return errorStyle.Render("Connectivity: UDP unavailable — DERP (TCP) relay only")
 	case result.NATKnown && result.HardNAT:
-		return offlineStyle.Render("Connectivity: UDP ok · NAT hard — expect relayed (DERP/TCP) connections")
+		return errorStyle.Render("Connectivity: UDP ok · NAT hard — expect relayed (DERP/TCP) connections")
 	case result.NATKnown && !result.HardNAT:
 		return onlineStyle.Render("Connectivity: UDP ok · NAT easy — direct connections likely")
 	default:
-		return onlineStyle.Render("Connectivity: UDP ok · NAT unknown")
+		return onlineStyle.Render("Connectivity: UDP ok") + " · NAT unknown"
 	}
 }
 
