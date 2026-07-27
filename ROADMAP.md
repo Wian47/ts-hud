@@ -30,7 +30,7 @@
 
 ### 2. DERP Latency Matrix & Ping Diagnostics
 * [x] Live latency graph across all Tailscale DERP relay locations (e.g., `nyc`, `fra`, `tok`, `syd`).
-* [ ] One-click UDP vs. TCP connection diagnostic test to troubleshoot hard NAT issues.
+* [x] One-click UDP vs. TCP connection diagnostic test to troubleshoot hard NAT issues.
 
 ### 3. Taildrop TUI File Manager
 * Terminal file picker integration to send files or directories over Taildrop.

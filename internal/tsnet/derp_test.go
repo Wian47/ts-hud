@@ -8,6 +8,7 @@ import (
 
 	"tailscale.com/net/netcheck"
 	"tailscale.com/tailcfg"
+	"tailscale.com/types/opt"
 )
 
 func TestRegionsFromReportSortsAvailableFirstByLatency(t *testing.T) {
@@ -57,6 +58,68 @@ func codesOf(regions []DERPRegion) []string {
 		codes[i] = r.Code
 	}
 	return codes
+}
+
+func TestNetCheckResultFromReportSurfacesUDPAndNAT(t *testing.T) {
+	dm := &tailcfg.DERPMap{
+		Regions: map[int]*tailcfg.DERPRegion{
+			1: {RegionID: 1, RegionCode: "nyc", RegionName: "New York City"},
+		},
+	}
+
+	tests := []struct {
+		name         string
+		udp          bool
+		mapping      opt.Bool
+		wantHardNAT  bool
+		wantNATKnown bool
+	}{
+		{
+			name:         "udp ok, easy NAT",
+			udp:          true,
+			mapping:      opt.NewBool(false),
+			wantHardNAT:  false,
+			wantNATKnown: true,
+		},
+		{
+			name:         "udp ok, hard NAT",
+			udp:          true,
+			mapping:      opt.NewBool(true),
+			wantHardNAT:  true,
+			wantNATKnown: true,
+		},
+		{
+			name:         "udp failed, NAT unknown",
+			udp:          false,
+			mapping:      opt.Bool(""),
+			wantHardNAT:  false,
+			wantNATKnown: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report := &netcheck.Report{
+				UDP:                   tt.udp,
+				MappingVariesByDestIP: tt.mapping,
+			}
+
+			got := netCheckResultFromReport(dm, report)
+
+			if got.UDP != tt.udp {
+				t.Errorf("UDP = %v, want %v", got.UDP, tt.udp)
+			}
+			if got.HardNAT != tt.wantHardNAT {
+				t.Errorf("HardNAT = %v, want %v", got.HardNAT, tt.wantHardNAT)
+			}
+			if got.NATKnown != tt.wantNATKnown {
+				t.Errorf("NATKnown = %v, want %v", got.NATKnown, tt.wantNATKnown)
+			}
+			if len(got.Regions) != 1 || got.Regions[0].Code != "nyc" {
+				t.Errorf("Regions = %+v, want the nyc region", got.Regions)
+			}
+		})
+	}
 }
 
 func TestNetCheckPropagatesDERPMapError(t *testing.T) {

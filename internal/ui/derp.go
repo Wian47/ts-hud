@@ -16,11 +16,8 @@ const (
 
 // renderDERPTable shows live per-region DERP latency. Unlike renderTable,
 // it's read-only: nothing here is selectable, so there's no cursor.
-func renderDERPTable(regions []tsnet.DERPRegion, loading bool, checkErr error, width int) string {
+func renderDERPTable(result tsnet.NetCheckResult, loading bool, checkErr error, width int) string {
 	var b strings.Builder
-
-	b.WriteString(headerStyle.Render(formatDERPRow("CODE", "REGION", "LATENCY")))
-	b.WriteString("\n")
 
 	switch {
 	case loading:
@@ -29,12 +26,18 @@ func renderDERPTable(regions []tsnet.DERPRegion, loading bool, checkErr error, w
 	case checkErr != nil:
 		b.WriteString(errorStyle.Render("  " + checkErr.Error()))
 		return b.String()
-	case len(regions) == 0:
+	case len(result.Regions) == 0:
 		b.WriteString(helpStyle.Render("  no DERP regions available"))
 		return b.String()
 	}
 
-	for _, r := range regions {
+	b.WriteString(connectivitySummary(result))
+	b.WriteString("\n\n")
+
+	b.WriteString(headerStyle.Render(formatDERPRow("CODE", "REGION", "LATENCY")))
+	b.WriteString("\n")
+
+	for _, r := range result.Regions {
 		latency := "—"
 		latencyStyle := offlineStyle
 		if r.Available {
@@ -67,6 +70,22 @@ func renderDERPTable(regions []tsnet.DERPRegion, loading bool, checkErr error, w
 	}
 
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// connectivitySummary renders a one-line UDP/NAT verdict: whether direct
+// UDP peer connections are likely to work, or whether hole-punching is
+// unreliable and connections will fall back to relayed DERP (TCP).
+func connectivitySummary(result tsnet.NetCheckResult) string {
+	switch {
+	case !result.UDP:
+		return errorStyle.Render("Connectivity: UDP unavailable — DERP (TCP) relay only")
+	case result.NATKnown && result.HardNAT:
+		return errorStyle.Render("Connectivity: UDP ok · NAT hard — expect relayed (DERP/TCP) connections")
+	case result.NATKnown && !result.HardNAT:
+		return onlineStyle.Render("Connectivity: UDP ok · NAT easy — direct connections likely")
+	default:
+		return onlineStyle.Render("Connectivity: UDP ok") + " · NAT unknown"
+	}
 }
 
 func formatDERPRow(code, region, latency string) string {

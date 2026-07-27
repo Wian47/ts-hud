@@ -341,7 +341,7 @@ func TestDERPReportMsgPopulatesRegionsAndClearsLoading(t *testing.T) {
 		{Code: "fra", Name: "Frankfurt", Latency: 20 * time.Millisecond, Available: true, Preferred: true},
 		{Code: "syd", Name: "Sydney", Available: false},
 	}
-	updated, _ = m.Update(derpReportMsg{regions: regions})
+	updated, _ = m.Update(derpReportMsg{result: tsnet.NetCheckResult{Regions: regions}})
 	m = updated.(Model)
 
 	if m.derpLoading {
@@ -371,7 +371,7 @@ func TestDERPViewRefreshRestartsLoading(t *testing.T) {
 	m := newTestModel()
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
 	m = updated.(Model)
-	updated, _ = m.Update(derpReportMsg{regions: []tsnet.DERPRegion{{Code: "fra"}}})
+	updated, _ = m.Update(derpReportMsg{result: tsnet.NetCheckResult{Regions: []tsnet.DERPRegion{{Code: "fra"}}}})
 	m = updated.(Model)
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
