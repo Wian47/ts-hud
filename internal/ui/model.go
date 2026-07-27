@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"tailscale.com/ipn"
 
 	"github.com/Wian47/ts-hud/internal/tsnet"
 )
@@ -30,6 +31,11 @@ type derpReportMsg struct {
 
 type peerDetailReportMsg struct {
 	result tsnet.PeerDetail
+}
+
+type prefsMsg struct {
+	prefs *ipn.Prefs
+	err   error
 }
 
 // Model is the root Bubble Tea model for ts-hud.
@@ -59,6 +65,12 @@ type Model struct {
 	peerDetailTarget  tsnet.Peer
 	peerDetailResult  tsnet.PeerDetail
 	peerDetailLoading bool
+
+	viewingPrefs bool
+	prefsCursor  int
+	prefs        *ipn.Prefs
+	prefsLoading bool
+	prefsErr     error
 
 	viewingSSH bool
 	sshPane    *sshPane
@@ -147,6 +159,60 @@ func peerDetailCmd(fetcher *tsnet.Fetcher, ip netip.Addr) tea.Cmd {
 	}
 }
 
+func prefsFetchCmd(fetcher *tsnet.Fetcher) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		prefs, err := fetcher.GetPrefs(ctx)
+		return prefsMsg{prefs: prefs, err: err}
+	}
+}
+
+func setRunSSHCmd(fetcher *tsnet.Fetcher, run bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		prefs, err := fetcher.SetRunSSH(ctx, run)
+		return prefsMsg{prefs: prefs, err: err}
+	}
+}
+
+func setShieldsUpCmd(fetcher *tsnet.Fetcher, up bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		prefs, err := fetcher.SetShieldsUp(ctx, up)
+		return prefsMsg{prefs: prefs, err: err}
+	}
+}
+
+func setAcceptRoutesCmd(fetcher *tsnet.Fetcher, accept bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		prefs, err := fetcher.SetAcceptRoutes(ctx, accept)
+		return prefsMsg{prefs: prefs, err: err}
+	}
+}
+
+func setAcceptDNSCmd(fetcher *tsnet.Fetcher, accept bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		prefs, err := fetcher.SetAcceptDNS(ctx, accept)
+		return prefsMsg{prefs: prefs, err: err}
+	}
+}
+
+func setAdvertiseExitNodeCmd(fetcher *tsnet.Fetcher, advertise bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		prefs, err := fetcher.SetAdvertiseExitNode(ctx, advertise)
+		return prefsMsg{prefs: prefs, err: err}
+	}
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -188,6 +254,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case peerDetailReportMsg:
 		m.peerDetailLoading = false
 		m.peerDetailResult = msg.result
+		return m, nil
+
+	case prefsMsg:
+		m.prefsLoading = false
+		if msg.err != nil {
+			m.prefsErr = msg.err
+			return m, nil
+		}
+		m.prefs = msg.prefs
+		m.prefsErr = nil
 		return m, nil
 
 	case sshStartedMsg:
@@ -247,6 +323,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDERPView(msg)
 		case m.viewingPeerDetail:
 			return m.updatePeerDetailView(msg)
+		case m.viewingPrefs:
+			return m.updatePrefsView(msg)
 		case m.viewingSSH:
 			return m.updateSSHPane(msg)
 		default:
@@ -299,6 +377,12 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.peerDetailResult = tsnet.PeerDetail{}
 			return m, peerDetailCmd(m.fetcher, peer.IPs[0])
 		}
+	case "p":
+		m.viewingPrefs = true
+		m.prefsCursor = 0
+		m.prefsLoading = true
+		m.prefsErr = nil
+		return m, prefsFetchCmd(m.fetcher)
 	}
 	m.clampCursor()
 	return m, nil
@@ -327,6 +411,48 @@ func (m Model) updatePeerDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, peerDetailCmd(m.fetcher, m.peerDetailTarget.IPs[0])
 	}
 	return m, nil
+}
+
+func (m Model) updatePrefsView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "p":
+		m.viewingPrefs = false
+		return m, nil
+	case "j", "down":
+		m.prefsCursor++
+		m.clampPrefsCursor()
+	case "k", "up":
+		m.prefsCursor--
+		m.clampPrefsCursor()
+	case "enter", " ":
+		if m.prefs == nil {
+			return m, nil
+		}
+		next := !prefRows(m.prefs)[m.prefsCursor].on
+		m.prefsLoading = true
+		switch m.prefsCursor {
+		case 0:
+			return m, setRunSSHCmd(m.fetcher, next)
+		case 1:
+			return m, setShieldsUpCmd(m.fetcher, next)
+		case 2:
+			return m, setAcceptRoutesCmd(m.fetcher, next)
+		case 3:
+			return m, setAcceptDNSCmd(m.fetcher, next)
+		case 4:
+			return m, setAdvertiseExitNodeCmd(m.fetcher, next)
+		}
+	}
+	return m, nil
+}
+
+func (m *Model) clampPrefsCursor() {
+	if m.prefsCursor < 0 {
+		m.prefsCursor = 0
+	}
+	if m.prefsCursor > numPrefRows-1 {
+		m.prefsCursor = numPrefRows - 1
+	}
 }
 
 func (m Model) updateSSHPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -479,6 +605,9 @@ func (m Model) View() string {
 	case m.viewingPeerDetail:
 		body = renderPeerDetail(m.peerDetailTarget, m.peerDetailResult, m.peerDetailLoading)
 		footer = helpStyle.Render("r refresh  esc/i back")
+	case m.viewingPrefs:
+		body = renderPrefsPanel(m.prefs, m.prefsCursor, m.prefsLoading, m.prefsErr, width)
+		footer = helpStyle.Render("j/k move  enter toggle  esc/p back")
 	default:
 		body = renderTable(m.filtered, m.cursor, width)
 		switch {
@@ -487,7 +616,7 @@ func (m Model) View() string {
 		case m.err != nil:
 			footer = errorStyle.Render("error: " + m.err.Error())
 		default:
-			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  d derp  i info  r refresh  q quit")
+			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  d derp  i info  p prefs  r refresh  q quit")
 		}
 	}
 

@@ -16,10 +16,14 @@ import (
 // fakeLocalClient substitutes for *local.Client in tests that exercise
 // EditPrefs-based operations without a real tailscaled socket.
 type fakeLocalClient struct {
-	editErr    error
-	gotMasked  *ipn.MaskedPrefs
-	derpMap    *tailcfg.DERPMap
-	derpMapErr error
+	editErr       error
+	gotMasked     *ipn.MaskedPrefs
+	editCallCount int
+	derpMap       *tailcfg.DERPMap
+	derpMapErr    error
+
+	getPrefsResult *ipn.Prefs
+	getPrefsErr    error
 
 	pingResult  *ipnstate.PingResult
 	pingErr     error
@@ -33,10 +37,15 @@ func (f *fakeLocalClient) Status(ctx context.Context) (*ipnstate.Status, error) 
 
 func (f *fakeLocalClient) EditPrefs(ctx context.Context, mp *ipn.MaskedPrefs) (*ipn.Prefs, error) {
 	f.gotMasked = mp
+	f.editCallCount++
 	if f.editErr != nil {
 		return nil, f.editErr
 	}
 	return &mp.Prefs, nil
+}
+
+func (f *fakeLocalClient) GetPrefs(ctx context.Context) (*ipn.Prefs, error) {
+	return f.getPrefsResult, f.getPrefsErr
 }
 
 func (f *fakeLocalClient) CurrentDERPMap(ctx context.Context) (*tailcfg.DERPMap, error) {
