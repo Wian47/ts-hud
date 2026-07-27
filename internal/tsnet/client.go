@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"os/exec"
 	"sort"
 
 	"tailscale.com/client/local"
+	"tailscale.com/client/tailscale/apitype"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tailcfg"
@@ -19,6 +21,8 @@ type localClient interface {
 	Status(ctx context.Context) (*ipnstate.Status, error)
 	EditPrefs(ctx context.Context, mp *ipn.MaskedPrefs) (*ipn.Prefs, error)
 	CurrentDERPMap(ctx context.Context) (*tailcfg.DERPMap, error)
+	Ping(ctx context.Context, ip netip.Addr, pingtype tailcfg.PingType) (*ipnstate.PingResult, error)
+	WhoIs(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error)
 }
 
 // Fetcher retrieves live Tailscale status, preferring the LocalAPI socket

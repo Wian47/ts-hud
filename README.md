@@ -40,6 +40,7 @@ ts-hud
 | `enter` | SSH into the selected online peer, embedded in the TUI |
 | `x` | Open the exit node picker |
 | `d` | Open the DERP latency matrix |
+| `i` | Open peer detail (live ping + owner/tags) for the selected peer |
 | `r` | Manual refresh |
 | `q` / `ctrl+c` | Quit |
 
@@ -88,6 +89,17 @@ typical on IPv6-only paths).
 |---|---|
 | `r` | Re-run the check |
 | `esc` / `d` | Back to the peer table |
+
+### Peer detail
+
+Press `i` on any peer (online or offline) to see a live ping and whois
+lookup: latency and path (direct, DERP-relayed, or unreachable), plus
+which account owns the device and its ACL tags.
+
+| Key | Action |
+|---|---|
+| `r` | Re-run the probe |
+| `esc` / `i` | Back to the peer table |
 
 ## Flags
 

@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -27,6 +28,10 @@ type derpReportMsg struct {
 	err    error
 }
 
+type peerDetailReportMsg struct {
+	result tsnet.PeerDetail
+}
+
 // Model is the root Bubble Tea model for ts-hud.
 type Model struct {
 	fetcher         *tsnet.Fetcher
@@ -49,6 +54,11 @@ type Model struct {
 	derpNetCheck tsnet.NetCheckResult
 	derpLoading  bool
 	derpErr      error
+
+	viewingPeerDetail bool
+	peerDetailTarget  tsnet.Peer
+	peerDetailResult  tsnet.PeerDetail
+	peerDetailLoading bool
 
 	viewingSSH bool
 	sshPane    *sshPane
@@ -127,6 +137,16 @@ func derpCheckCmd(fetcher *tsnet.Fetcher) tea.Cmd {
 	}
 }
 
+// peerDetailCmd runs a live ping + whois probe against one peer's primary
+// Tailscale IP.
+func peerDetailCmd(fetcher *tsnet.Fetcher, ip netip.Addr) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return peerDetailReportMsg{result: fetcher.PeerDetail(ctx, ip)}
+	}
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -163,6 +183,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.derpLoading = false
 		m.derpNetCheck = msg.result
 		m.derpErr = msg.err
+		return m, nil
+
+	case peerDetailReportMsg:
+		m.peerDetailLoading = false
+		m.peerDetailResult = msg.result
 		return m, nil
 
 	case sshStartedMsg:
@@ -220,6 +245,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateExitNodePicker(msg)
 		case m.viewingDERP:
 			return m.updateDERPView(msg)
+		case m.viewingPeerDetail:
+			return m.updatePeerDetailView(msg)
 		case m.viewingSSH:
 			return m.updateSSHPane(msg)
 		default:
@@ -264,6 +291,14 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.derpLoading = true
 		m.derpErr = nil
 		return m, derpCheckCmd(m.fetcher)
+	case "i":
+		if peer, ok := m.selectedPeer(); ok && len(peer.IPs) > 0 {
+			m.viewingPeerDetail = true
+			m.peerDetailTarget = peer
+			m.peerDetailLoading = true
+			m.peerDetailResult = tsnet.PeerDetail{}
+			return m, peerDetailCmd(m.fetcher, peer.IPs[0])
+		}
 	}
 	m.clampCursor()
 	return m, nil
@@ -278,6 +313,18 @@ func (m Model) updateDERPView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.derpLoading = true
 		m.derpErr = nil
 		return m, derpCheckCmd(m.fetcher)
+	}
+	return m, nil
+}
+
+func (m Model) updatePeerDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "i":
+		m.viewingPeerDetail = false
+		return m, nil
+	case "r":
+		m.peerDetailLoading = true
+		return m, peerDetailCmd(m.fetcher, m.peerDetailTarget.IPs[0])
 	}
 	return m, nil
 }
@@ -429,6 +476,9 @@ func (m Model) View() string {
 	case m.viewingDERP:
 		body = renderDERPTable(m.derpNetCheck, m.derpLoading, m.derpErr, width)
 		footer = helpStyle.Render("r refresh  esc/d back")
+	case m.viewingPeerDetail:
+		body = renderPeerDetail(m.peerDetailTarget, m.peerDetailResult, m.peerDetailLoading)
+		footer = helpStyle.Render("r refresh  esc/i back")
 	default:
 		body = renderTable(m.filtered, m.cursor, width)
 		switch {
@@ -437,7 +487,7 @@ func (m Model) View() string {
 		case m.err != nil:
 			footer = errorStyle.Render("error: " + m.err.Error())
 		default:
-			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  d derp  r refresh  q quit")
+			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  d derp  i info  r refresh  q quit")
 		}
 	}
 
