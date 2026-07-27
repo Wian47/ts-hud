@@ -23,8 +23,8 @@ type tickMsg struct{}
 type exitNodeResultMsg struct{ err error }
 
 type derpReportMsg struct {
-	regions []tsnet.DERPRegion
-	err     error
+	result tsnet.NetCheckResult
+	err    error
 }
 
 // Model is the root Bubble Tea model for ts-hud.
@@ -46,7 +46,7 @@ type Model struct {
 	allowLANAccess  bool
 
 	viewingDERP bool
-	derpRegions []tsnet.DERPRegion
+	derpNetCheck tsnet.NetCheckResult
 	derpLoading bool
 	derpErr     error
 
@@ -122,8 +122,8 @@ func derpCheckCmd(fetcher *tsnet.Fetcher) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		regions, err := fetcher.NetCheck(ctx)
-		return derpReportMsg{regions: regions, err: err}
+		result, err := fetcher.NetCheck(ctx)
+		return derpReportMsg{result: result, err: err}
 	}
 }
 
@@ -161,7 +161,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case derpReportMsg:
 		m.derpLoading = false
-		m.derpRegions = msg.regions
+		m.derpNetCheck = msg.result
 		m.derpErr = msg.err
 		return m, nil
 
@@ -427,7 +427,7 @@ func (m Model) View() string {
 		body = renderExitNodePicker(m.exitNodeCandidates(), m.exitNodeCursor, m.allowLANAccess, width)
 		footer = helpStyle.Render("j/k move  enter select  l toggle LAN access  esc cancel")
 	case m.viewingDERP:
-		body = renderDERPTable(m.derpRegions, m.derpLoading, m.derpErr, width)
+		body = renderDERPTable(m.derpNetCheck, m.derpLoading, m.derpErr, width)
 		footer = helpStyle.Render("r refresh  esc/d back")
 	default:
 		body = renderTable(m.filtered, m.cursor, width)
