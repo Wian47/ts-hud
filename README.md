@@ -42,6 +42,8 @@ ts-hud
 | `d` | Open the DERP latency matrix |
 | `i` | Open peer detail (live ping + owner/tags) for the selected peer |
 | `p` | Open the preferences panel (SSH, shields up, accept routes/DNS, advertise exit node) |
+| `c` | Bring the Tailscale connection up, or down (with confirmation) |
+| `a` | Open the account-switch overlay |
 | `r` | Manual refresh |
 | `q` / `ctrl+c` | Quit |
 
@@ -114,6 +116,36 @@ step, matching `tailscale set`.
 | `j` / `k` | Move down / up |
 | `enter` | Toggle the highlighted preference |
 | `esc` / `p` | Back to the peer table |
+
+### Connection toggle
+
+Press `c` to bring the Tailscale connection up or down. Bringing it up
+(from `Stopped`/`Starting`) applies immediately, matching the preferences
+panel's immediate-apply behavior. Bringing it down (from `Running`) asks
+for confirmation first, since it interrupts existing connectivity. If the
+daemon isn't logged in (`NeedsLogin`/`NeedsMachineAuth`/`NoState`), `c`
+shows an inline error instead — there's no node key to bring up.
+
+When the connection isn't `Running`, the header shows the backend state in
+brackets, e.g. `[STOPPED]`, so you can tell the peer list below might be
+stale.
+
+| Key | Action |
+|---|---|
+| `y` | Confirm bringing the connection down |
+| `n` / `esc` | Cancel |
+
+### Account switch
+
+Press `a` to switch between Tailscale accounts already authenticated on
+this device (via a prior `tailscale login`). Adding a brand-new account
+isn't supported here — see `tailscale login` for that.
+
+| Key | Action |
+|---|---|
+| `j` / `k` | Move down / up |
+| `enter` | Switch to the highlighted account |
+| `esc` / `a` | Back to the peer table |
 
 ## Flags
 

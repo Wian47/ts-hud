@@ -655,6 +655,208 @@ func TestPrefsMsgErrorKeepsExistingPrefs(t *testing.T) {
 	}
 }
 
+func TestRenderHeaderOmitsSuffixWhenRunning(t *testing.T) {
+	m := newTestModel()
+	self := tsnet.Peer{HostName: "laptop", IPs: []netip.Addr{netip.MustParseAddr("100.64.0.9")}}
+	m.self = &self
+	m.backendState = "Running"
+
+	header := m.renderHeader()
+	if contains(header, "RUNNING") {
+		t.Errorf("renderHeader() = %q, want no state suffix when Running", header)
+	}
+}
+
+func TestRenderHeaderOmitsSuffixWhenUnset(t *testing.T) {
+	m := newTestModel()
+	self := tsnet.Peer{HostName: "laptop", IPs: []netip.Addr{netip.MustParseAddr("100.64.0.9")}}
+	m.self = &self
+
+	header := m.renderHeader()
+	if contains(header, "[") {
+		t.Errorf("renderHeader() = %q, want no state suffix before the first fetch populates backendState", header)
+	}
+}
+
+func TestRenderHeaderShowsSuffixWhenStopped(t *testing.T) {
+	m := newTestModel()
+	self := tsnet.Peer{HostName: "laptop", IPs: []netip.Addr{netip.MustParseAddr("100.64.0.9")}}
+	m.self = &self
+	m.backendState = "Stopped"
+
+	header := m.renderHeader()
+	if !contains(header, "[STOPPED]") {
+		t.Errorf("renderHeader() = %q, want it to contain %q", header, "[STOPPED]")
+	}
+}
+
+func TestPeersMsgPopulatesBackendState(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(peersMsg{peers: testPeers(), backendState: "Stopped"})
+	m = updated.(Model)
+
+	if m.backendState != "Stopped" {
+		t.Errorf("backendState = %q after peersMsg, want %q", m.backendState, "Stopped")
+	}
+}
+
+func TestConnToggleRunningAsksConfirmation(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "Running"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+
+	if !m.confirmingDown {
+		t.Fatal("confirmingDown = false after 'c' while Running, want true")
+	}
+	if cmd != nil {
+		t.Error("Update('c') while Running returned a non-nil cmd, want nil until confirmed")
+	}
+	view := m.View()
+	if !contains(view, "Bring Tailscale down?") {
+		t.Errorf("View() = %q, want the confirmation prompt", view)
+	}
+}
+
+func TestConnConfirmYesToggles(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "Running"
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = updated.(Model)
+
+	if m.confirmingDown {
+		t.Error("confirmingDown = true after 'y', want false")
+	}
+	if !m.connLoading {
+		t.Error("connLoading = false after 'y', want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update('y') while confirming returned nil cmd, want a SetWantRunning command")
+	}
+}
+
+func TestConnConfirmNoCancels(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "Running"
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m = updated.(Model)
+
+	if m.confirmingDown {
+		t.Error("confirmingDown = true after 'n', want false")
+	}
+	if m.connLoading {
+		t.Error("connLoading = true after 'n', want false — nothing should have been triggered")
+	}
+	if cmd != nil {
+		t.Error("Update('n') while confirming returned a non-nil cmd, want nil")
+	}
+}
+
+func TestConnConfirmEscCancels(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "Running"
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+
+	if m.confirmingDown {
+		t.Error("confirmingDown = true after esc, want false")
+	}
+}
+
+func TestConnToggleStoppedAppliesImmediately(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "Stopped"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+
+	if m.confirmingDown {
+		t.Error("confirmingDown = true after 'c' while Stopped, want false — no confirmation for bringing the connection up")
+	}
+	if !m.connLoading {
+		t.Error("connLoading = false after 'c' while Stopped, want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update('c') while Stopped returned nil cmd, want a SetWantRunning command")
+	}
+}
+
+func TestConnToggleNeedsLoginSetsInlineError(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "NeedsLogin"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+
+	if m.connErr == nil {
+		t.Fatal("connErr = nil after 'c' while NeedsLogin, want an inline error")
+	}
+	if cmd != nil {
+		t.Error("Update('c') while NeedsLogin returned a non-nil cmd, want nil — no EditPrefs call is possible")
+	}
+	view := m.View()
+	if !contains(view, "not logged in") {
+		t.Errorf("View() = %q, want the inline error rendered", view)
+	}
+}
+
+func TestConnErrClearsOnNextKeypress(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "NeedsLogin"
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+	if m.connErr == nil {
+		t.Fatal("connErr = nil after 'c' while NeedsLogin, want it set (test precondition)")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = updated.(Model)
+
+	if m.connErr != nil {
+		t.Errorf("connErr = %v after the next keypress, want nil", m.connErr)
+	}
+}
+
+func TestConnResultMsgClearsLoadingOnSuccess(t *testing.T) {
+	m := newTestModel()
+	m.connLoading = true
+
+	updated, cmd := m.Update(connResultMsg{})
+	m = updated.(Model)
+
+	if m.connLoading {
+		t.Error("connLoading = true after a successful connResultMsg, want false")
+	}
+	if cmd != nil {
+		t.Error("Update(connResultMsg{}) returned a non-nil cmd, want nil — state arrives on the next periodic refresh")
+	}
+}
+
+func TestConnResultMsgSetsErrorOnFailure(t *testing.T) {
+	m := newTestModel()
+	m.connLoading = true
+
+	updated, _ := m.Update(connResultMsg{err: errors.New("boom")})
+	m = updated.(Model)
+
+	if m.connLoading {
+		t.Error("connLoading = true after a failed connResultMsg, want false")
+	}
+	if m.connErr == nil {
+		t.Fatal("connErr = nil after a failed connResultMsg, want it set")
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (func() bool {
 		for i := 0; i+len(needle) <= len(haystack); i++ {
@@ -664,4 +866,190 @@ func contains(haystack, needle string) bool {
 		}
 		return false
 	})()
+}
+
+func TestAccountsOpensAndFetches(t *testing.T) {
+	m := newTestModel()
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	if !m.viewingAccounts {
+		t.Fatal("viewingAccounts = false after 'a', want true")
+	}
+	if !m.accountsLoading {
+		t.Fatal("accountsLoading = false immediately after 'a', want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update('a') returned nil cmd, want an accounts-fetch command")
+	}
+}
+
+func TestAccountsEscCloses(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+
+	if m.viewingAccounts {
+		t.Fatal("viewingAccounts = true after esc, want false")
+	}
+}
+
+func TestAccountsCursorMovesAndClamps(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+	updated, _ = m.Update(accountsMsg{all: []ipn.LoginProfile{{ID: "1"}, {ID: "2"}}})
+	m = updated.(Model)
+
+	for i := 0; i < 5; i++ {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		m = updated.(Model)
+	}
+	if m.accountsCursor != 1 {
+		t.Errorf("accountsCursor = %d after 5x 'j' over 2 profiles, want clamped to 1", m.accountsCursor)
+	}
+
+	for i := 0; i < 5; i++ {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+		m = updated.(Model)
+	}
+	if m.accountsCursor != 0 {
+		t.Errorf("accountsCursor = %d after 5x 'k', want clamped to 0", m.accountsCursor)
+	}
+}
+
+func TestAccountsMsgPopulatesListAndClearsLoading(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	current := ipn.LoginProfile{ID: "1ab3", Name: "alice@example.com"}
+	updated, _ = m.Update(accountsMsg{current: current, all: []ipn.LoginProfile{current}})
+	m = updated.(Model)
+
+	if m.accountsLoading {
+		t.Fatal("accountsLoading = true after accountsMsg, want false")
+	}
+	view := m.View()
+	if !contains(view, "alice@example.com") {
+		t.Errorf("View() missing accounts panel\n---\n%s", view)
+	}
+}
+
+func TestAccountsMsgErrorKeepsEmptyStateAndSetsError(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(accountsMsg{err: errors.New("boom")})
+	m = updated.(Model)
+
+	if m.accountsErr == nil {
+		t.Fatal("accountsErr = nil after accountsMsg with an error, want it set")
+	}
+	if len(m.accountsAll) != 0 {
+		t.Errorf("accountsAll = %+v after a failed fetch, want empty", m.accountsAll)
+	}
+}
+
+func TestAccountsEnterSwitchesProfile(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+	all := []ipn.LoginProfile{{ID: "1ab3", Name: "alice"}, {ID: "9f2c", Name: "bob"}}
+	updated, _ = m.Update(accountsMsg{current: all[0], all: all})
+	m = updated.(Model)
+	m.accountsCursor = 1
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if !m.accountsLoading {
+		t.Fatal("accountsLoading = false after enter on a profile row, want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update(enter) in accounts view returned nil cmd, want a switch command")
+	}
+}
+
+func TestSwitchProfileMsgSuccessRefetches(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(switchProfileMsg{})
+	m = updated.(Model)
+
+	if m.accountsErr != nil {
+		t.Errorf("accountsErr = %v after a successful switch, want nil", m.accountsErr)
+	}
+	if !m.accountsLoading {
+		t.Error("accountsLoading = false after a successful switch, want true — a follow-up fetch is in flight")
+	}
+	if cmd == nil {
+		t.Fatal("Update(switchProfileMsg{}) returned nil cmd, want a follow-up accounts-fetch command")
+	}
+}
+
+func TestSwitchProfileMsgFailureKeepsListAndSetsError(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+	all := []ipn.LoginProfile{{ID: "1ab3", Name: "alice"}}
+	updated, _ = m.Update(accountsMsg{current: all[0], all: all})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(switchProfileMsg{err: errors.New("boom")})
+	m = updated.(Model)
+
+	if m.accountsErr == nil {
+		t.Fatal("accountsErr = nil after a failed switch, want it set")
+	}
+	if len(m.accountsAll) != 1 {
+		t.Errorf("accountsAll = %+v after a failed switch, want the last-loaded list preserved", m.accountsAll)
+	}
+	if cmd != nil {
+		t.Error("Update(switchProfileMsg{err}) returned a non-nil cmd, want nil — no re-fetch after a failed switch")
+	}
+}
+
+func TestAccountsEnterWhileLoadingIsNoop(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+	all := []ipn.LoginProfile{{ID: "1ab3", Name: "alice"}, {ID: "9f2c", Name: "bob"}}
+	updated, _ = m.Update(accountsMsg{current: all[0], all: all})
+	m = updated.(Model)
+	m.accountsLoading = true
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Error("Update(enter) while accountsLoading returned a non-nil cmd, want nil — a switch is already in flight")
+	}
+	if !m.accountsLoading {
+		t.Error("accountsLoading = false after a no-op enter, want it to remain true (switch still in flight)")
+	}
+}
+
+func TestAccountsMsgClampsCursorToShorterList(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+	all := []ipn.LoginProfile{{ID: "1ab3", Name: "alice"}, {ID: "9f2c", Name: "bob"}}
+	updated, _ = m.Update(accountsMsg{current: all[0], all: all})
+	m = updated.(Model)
+	m.accountsCursor = 1
+
+	updated, _ = m.Update(accountsMsg{current: all[0], all: all[:1]})
+	m = updated.(Model)
+
+	if m.accountsCursor != 0 {
+		t.Errorf("accountsCursor = %d after accountsMsg shrank the list, want clamped to 0", m.accountsCursor)
+	}
 }

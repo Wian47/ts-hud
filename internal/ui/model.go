@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -14,8 +15,9 @@ import (
 )
 
 type peersMsg struct {
-	peers []tsnet.Peer
-	self  *tsnet.Peer
+	peers        []tsnet.Peer
+	self         *tsnet.Peer
+	backendState string
 }
 
 type errMsg struct{ err error }
@@ -38,16 +40,27 @@ type prefsMsg struct {
 	err   error
 }
 
+type connResultMsg struct{ err error }
+
+type accountsMsg struct {
+	current ipn.LoginProfile
+	all     []ipn.LoginProfile
+	err     error
+}
+
+type switchProfileMsg struct{ err error }
+
 // Model is the root Bubble Tea model for ts-hud.
 type Model struct {
 	fetcher         *tsnet.Fetcher
 	refreshInterval time.Duration
 
-	peers    []tsnet.Peer
-	filtered []tsnet.Peer
-	self     *tsnet.Peer
-	cursor   int
-	err      error
+	peers        []tsnet.Peer
+	filtered     []tsnet.Peer
+	self         *tsnet.Peer
+	backendState string
+	cursor       int
+	err          error
 
 	searching   bool
 	searchInput textinput.Model
@@ -71,6 +84,17 @@ type Model struct {
 	prefs        *ipn.Prefs
 	prefsLoading bool
 	prefsErr     error
+
+	confirmingDown bool
+	connLoading    bool
+	connErr        error
+
+	viewingAccounts bool
+	accountsCursor  int
+	accountsCurrent ipn.LoginProfile
+	accountsAll     []ipn.LoginProfile
+	accountsLoading bool
+	accountsErr     error
 
 	viewingSSH bool
 	sshPane    *sshPane
@@ -101,11 +125,11 @@ func fetchCmd(fetcher *tsnet.Fetcher) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		peers, self, err := fetcher.Fetch(ctx)
+		peers, self, backendState, err := fetcher.Fetch(ctx)
 		if err != nil {
 			return errMsg{err: err}
 		}
-		return peersMsg{peers: peers, self: self}
+		return peersMsg{peers: peers, self: self, backendState: backendState}
 	}
 }
 
@@ -213,6 +237,32 @@ func setAdvertiseExitNodeCmd(fetcher *tsnet.Fetcher, advertise bool) tea.Cmd {
 	}
 }
 
+func setWantRunningCmd(fetcher *tsnet.Fetcher, running bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err := fetcher.SetWantRunning(ctx, running)
+		return connResultMsg{err: err}
+	}
+}
+
+func accountsFetchCmd(fetcher *tsnet.Fetcher) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		current, all, err := fetcher.ListProfiles(ctx)
+		return accountsMsg{current: current, all: all, err: err}
+	}
+}
+
+func switchProfileCmd(fetcher *tsnet.Fetcher, id ipn.ProfileID) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return switchProfileMsg{err: fetcher.SwitchProfile(ctx, id)}
+	}
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -229,6 +279,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.peers = msg.peers
 		m.self = msg.self
+		m.backendState = msg.backendState
 		m.applyFilter()
 		return m, nil
 
@@ -265,6 +316,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prefs = msg.prefs
 		m.prefsErr = nil
 		return m, nil
+
+	case connResultMsg:
+		m.connLoading = false
+		if msg.err != nil {
+			m.connErr = msg.err
+		}
+		return m, nil
+
+	case accountsMsg:
+		m.accountsLoading = false
+		if msg.err != nil {
+			m.accountsErr = msg.err
+			return m, nil
+		}
+		m.accountsCurrent = msg.current
+		m.accountsAll = msg.all
+		m.accountsErr = nil
+		m.clampAccountsCursor()
+		return m, nil
+
+	case switchProfileMsg:
+		m.accountsLoading = false
+		if msg.err != nil {
+			m.accountsErr = msg.err
+			return m, nil
+		}
+		m.accountsErr = nil
+		m.accountsLoading = true
+		return m, accountsFetchCmd(m.fetcher)
 
 	case sshStartedMsg:
 		if !m.viewingSSH {
@@ -325,6 +405,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updatePeerDetailView(msg)
 		case m.viewingPrefs:
 			return m.updatePrefsView(msg)
+		case m.confirmingDown:
+			return m.updateConnConfirm(msg)
+		case m.viewingAccounts:
+			return m.updateAccountsView(msg)
 		case m.viewingSSH:
 			return m.updateSSHPane(msg)
 		default:
@@ -336,6 +420,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.connErr = nil
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -383,6 +468,26 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.prefsLoading = true
 		m.prefsErr = nil
 		return m, prefsFetchCmd(m.fetcher)
+	case "c":
+		if m.connLoading {
+			return m, nil
+		}
+		switch m.backendState {
+		case "Running":
+			m.confirmingDown = true
+		case "Stopped", "Starting":
+			m.connLoading = true
+			return m, setWantRunningCmd(m.fetcher, true)
+		case "NeedsLogin", "NeedsMachineAuth", "NoState":
+			m.connErr = fmt.Errorf("not logged in — run tailscale login")
+		}
+		return m, nil
+	case "a":
+		m.viewingAccounts = true
+		m.accountsCursor = 0
+		m.accountsLoading = true
+		m.accountsErr = nil
+		return m, accountsFetchCmd(m.fetcher)
 	}
 	m.clampCursor()
 	return m, nil
@@ -444,6 +549,56 @@ func (m Model) updatePrefsView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m Model) updateConnConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y":
+		m.confirmingDown = false
+		m.connLoading = true
+		return m, setWantRunningCmd(m.fetcher, false)
+	case "n", "esc":
+		m.confirmingDown = false
+	}
+	return m, nil
+}
+
+func (m Model) updateAccountsView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "a":
+		m.viewingAccounts = false
+		return m, nil
+	case "j", "down":
+		m.accountsCursor++
+		m.clampAccountsCursor()
+	case "k", "up":
+		m.accountsCursor--
+		m.clampAccountsCursor()
+	case "enter":
+		if m.accountsLoading {
+			return m, nil
+		}
+		if len(m.accountsAll) == 0 {
+			return m, nil
+		}
+		id := m.accountsAll[m.accountsCursor].ID
+		m.accountsLoading = true
+		return m, switchProfileCmd(m.fetcher, id)
+	}
+	return m, nil
+}
+
+func (m *Model) clampAccountsCursor() {
+	if m.accountsCursor < 0 {
+		m.accountsCursor = 0
+	}
+	if len(m.accountsAll) == 0 {
+		m.accountsCursor = 0
+		return
+	}
+	if m.accountsCursor > len(m.accountsAll)-1 {
+		m.accountsCursor = len(m.accountsAll) - 1
+	}
 }
 
 func (m *Model) clampPrefsCursor() {
@@ -608,15 +763,22 @@ func (m Model) View() string {
 	case m.viewingPrefs:
 		body = renderPrefsPanel(m.prefs, m.prefsCursor, m.prefsLoading, m.prefsErr, width)
 		footer = helpStyle.Render("j/k move  enter toggle  esc/p back")
+	case m.viewingAccounts:
+		body = renderAccountsPanel(m.accountsCurrent, m.accountsAll, m.accountsCursor, m.accountsLoading, m.accountsErr, width)
+		footer = helpStyle.Render("j/k move  enter switch  esc/a back")
 	default:
 		body = renderTable(m.filtered, m.cursor, width)
 		switch {
+		case m.confirmingDown:
+			footer = errorStyle.Render("Bring Tailscale down? y confirm  n/esc cancel")
 		case m.searching:
 			footer = searchPromptStyle.Render("search: ") + m.searchInput.View()
 		case m.err != nil:
 			footer = errorStyle.Render("error: " + m.err.Error())
+		case m.connErr != nil:
+			footer = errorStyle.Render(m.connErr.Error())
 		default:
-			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  d derp  i info  p prefs  r refresh  q quit")
+			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  d derp  i info  p prefs  c connection  a accounts  r refresh  q quit")
 		}
 	}
 
@@ -632,5 +794,9 @@ func (m Model) renderHeader() string {
 	if len(m.self.IPs) > 0 {
 		ip = m.self.IPs[0].String()
 	}
-	return fmt.Sprintf("%s  self: %s (%s)  peers: %d", title, m.self.DisplayName(), ip, len(m.peers))
+	header := fmt.Sprintf("%s  self: %s (%s)  peers: %d", title, m.self.DisplayName(), ip, len(m.peers))
+	if m.backendState != "" && m.backendState != "Running" {
+		header += "  " + errorStyle.Render("["+strings.ToUpper(m.backendState)+"]")
+	}
+	return header
 }
