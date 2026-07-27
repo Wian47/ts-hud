@@ -1016,3 +1016,40 @@ func TestSwitchProfileMsgFailureKeepsListAndSetsError(t *testing.T) {
 		t.Error("Update(switchProfileMsg{err}) returned a non-nil cmd, want nil — no re-fetch after a failed switch")
 	}
 }
+
+func TestAccountsEnterWhileLoadingIsNoop(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+	all := []ipn.LoginProfile{{ID: "1ab3", Name: "alice"}, {ID: "9f2c", Name: "bob"}}
+	updated, _ = m.Update(accountsMsg{current: all[0], all: all})
+	m = updated.(Model)
+	m.accountsLoading = true
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Error("Update(enter) while accountsLoading returned a non-nil cmd, want nil — a switch is already in flight")
+	}
+	if !m.accountsLoading {
+		t.Error("accountsLoading = false after a no-op enter, want it to remain true (switch still in flight)")
+	}
+}
+
+func TestAccountsMsgClampsCursorToShorterList(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+	all := []ipn.LoginProfile{{ID: "1ab3", Name: "alice"}, {ID: "9f2c", Name: "bob"}}
+	updated, _ = m.Update(accountsMsg{current: all[0], all: all})
+	m = updated.(Model)
+	m.accountsCursor = 1
+
+	updated, _ = m.Update(accountsMsg{current: all[0], all: all[:1]})
+	m = updated.(Model)
+
+	if m.accountsCursor != 0 {
+		t.Errorf("accountsCursor = %d after accountsMsg shrank the list, want clamped to 0", m.accountsCursor)
+	}
+}

@@ -333,6 +333,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.accountsCurrent = msg.current
 		m.accountsAll = msg.all
 		m.accountsErr = nil
+		m.clampAccountsCursor()
 		return m, nil
 
 	case switchProfileMsg:
@@ -574,6 +575,9 @@ func (m Model) updateAccountsView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.accountsCursor--
 		m.clampAccountsCursor()
 	case "enter":
+		if m.accountsLoading {
+			return m, nil
+		}
 		if len(m.accountsAll) == 0 {
 			return m, nil
 		}
