@@ -700,6 +700,163 @@ func TestPeersMsgPopulatesBackendState(t *testing.T) {
 	}
 }
 
+func TestConnToggleRunningAsksConfirmation(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "Running"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+
+	if !m.confirmingDown {
+		t.Fatal("confirmingDown = false after 'c' while Running, want true")
+	}
+	if cmd != nil {
+		t.Error("Update('c') while Running returned a non-nil cmd, want nil until confirmed")
+	}
+	view := m.View()
+	if !contains(view, "Bring Tailscale down?") {
+		t.Errorf("View() = %q, want the confirmation prompt", view)
+	}
+}
+
+func TestConnConfirmYesToggles(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "Running"
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = updated.(Model)
+
+	if m.confirmingDown {
+		t.Error("confirmingDown = true after 'y', want false")
+	}
+	if !m.connLoading {
+		t.Error("connLoading = false after 'y', want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update('y') while confirming returned nil cmd, want a SetWantRunning command")
+	}
+}
+
+func TestConnConfirmNoCancels(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "Running"
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m = updated.(Model)
+
+	if m.confirmingDown {
+		t.Error("confirmingDown = true after 'n', want false")
+	}
+	if m.connLoading {
+		t.Error("connLoading = true after 'n', want false — nothing should have been triggered")
+	}
+	if cmd != nil {
+		t.Error("Update('n') while confirming returned a non-nil cmd, want nil")
+	}
+}
+
+func TestConnConfirmEscCancels(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "Running"
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+
+	if m.confirmingDown {
+		t.Error("confirmingDown = true after esc, want false")
+	}
+}
+
+func TestConnToggleStoppedAppliesImmediately(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "Stopped"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+
+	if m.confirmingDown {
+		t.Error("confirmingDown = true after 'c' while Stopped, want false — no confirmation for bringing the connection up")
+	}
+	if !m.connLoading {
+		t.Error("connLoading = false after 'c' while Stopped, want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update('c') while Stopped returned nil cmd, want a SetWantRunning command")
+	}
+}
+
+func TestConnToggleNeedsLoginSetsInlineError(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "NeedsLogin"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+
+	if m.connErr == nil {
+		t.Fatal("connErr = nil after 'c' while NeedsLogin, want an inline error")
+	}
+	if cmd != nil {
+		t.Error("Update('c') while NeedsLogin returned a non-nil cmd, want nil — no EditPrefs call is possible")
+	}
+	view := m.View()
+	if !contains(view, "not logged in") {
+		t.Errorf("View() = %q, want the inline error rendered", view)
+	}
+}
+
+func TestConnErrClearsOnNextKeypress(t *testing.T) {
+	m := newTestModel()
+	m.backendState = "NeedsLogin"
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+	if m.connErr == nil {
+		t.Fatal("connErr = nil after 'c' while NeedsLogin, want it set (test precondition)")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = updated.(Model)
+
+	if m.connErr != nil {
+		t.Errorf("connErr = %v after the next keypress, want nil", m.connErr)
+	}
+}
+
+func TestConnResultMsgClearsLoadingOnSuccess(t *testing.T) {
+	m := newTestModel()
+	m.connLoading = true
+
+	updated, cmd := m.Update(connResultMsg{})
+	m = updated.(Model)
+
+	if m.connLoading {
+		t.Error("connLoading = true after a successful connResultMsg, want false")
+	}
+	if cmd != nil {
+		t.Error("Update(connResultMsg{}) returned a non-nil cmd, want nil — state arrives on the next periodic refresh")
+	}
+}
+
+func TestConnResultMsgSetsErrorOnFailure(t *testing.T) {
+	m := newTestModel()
+	m.connLoading = true
+
+	updated, _ := m.Update(connResultMsg{err: errors.New("boom")})
+	m = updated.(Model)
+
+	if m.connLoading {
+		t.Error("connLoading = true after a failed connResultMsg, want false")
+	}
+	if m.connErr == nil {
+		t.Fatal("connErr = nil after a failed connResultMsg, want it set")
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (func() bool {
 		for i := 0; i+len(needle) <= len(haystack); i++ {

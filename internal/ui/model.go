@@ -40,6 +40,8 @@ type prefsMsg struct {
 	err   error
 }
 
+type connResultMsg struct{ err error }
+
 // Model is the root Bubble Tea model for ts-hud.
 type Model struct {
 	fetcher         *tsnet.Fetcher
@@ -74,6 +76,10 @@ type Model struct {
 	prefs        *ipn.Prefs
 	prefsLoading bool
 	prefsErr     error
+
+	confirmingDown bool
+	connLoading    bool
+	connErr        error
 
 	viewingSSH bool
 	sshPane    *sshPane
@@ -216,6 +222,15 @@ func setAdvertiseExitNodeCmd(fetcher *tsnet.Fetcher, advertise bool) tea.Cmd {
 	}
 }
 
+func setWantRunningCmd(fetcher *tsnet.Fetcher, running bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err := fetcher.SetWantRunning(ctx, running)
+		return connResultMsg{err: err}
+	}
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -268,6 +283,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.prefs = msg.prefs
 		m.prefsErr = nil
+		return m, nil
+
+	case connResultMsg:
+		m.connLoading = false
+		if msg.err != nil {
+			m.connErr = msg.err
+		}
 		return m, nil
 
 	case sshStartedMsg:
@@ -329,6 +351,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updatePeerDetailView(msg)
 		case m.viewingPrefs:
 			return m.updatePrefsView(msg)
+		case m.confirmingDown:
+			return m.updateConnConfirm(msg)
 		case m.viewingSSH:
 			return m.updateSSHPane(msg)
 		default:
@@ -340,6 +364,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.connErr = nil
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -387,6 +412,20 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.prefsLoading = true
 		m.prefsErr = nil
 		return m, prefsFetchCmd(m.fetcher)
+	case "c":
+		if m.connLoading {
+			return m, nil
+		}
+		switch m.backendState {
+		case "Running":
+			m.confirmingDown = true
+		case "Stopped", "Starting":
+			m.connLoading = true
+			return m, setWantRunningCmd(m.fetcher, true)
+		case "NeedsLogin", "NeedsMachineAuth", "NoState":
+			m.connErr = fmt.Errorf("not logged in — run tailscale login")
+		}
+		return m, nil
 	}
 	m.clampCursor()
 	return m, nil
@@ -446,6 +485,18 @@ func (m Model) updatePrefsView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case 4:
 			return m, setAdvertiseExitNodeCmd(m.fetcher, next)
 		}
+	}
+	return m, nil
+}
+
+func (m Model) updateConnConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y":
+		m.confirmingDown = false
+		m.connLoading = true
+		return m, setWantRunningCmd(m.fetcher, false)
+	case "n", "esc":
+		m.confirmingDown = false
 	}
 	return m, nil
 }
@@ -615,12 +666,16 @@ func (m Model) View() string {
 	default:
 		body = renderTable(m.filtered, m.cursor, width)
 		switch {
+		case m.confirmingDown:
+			footer = errorStyle.Render("Bring Tailscale down? y confirm  n/esc cancel")
 		case m.searching:
 			footer = searchPromptStyle.Render("search: ") + m.searchInput.View()
 		case m.err != nil:
 			footer = errorStyle.Render("error: " + m.err.Error())
+		case m.connErr != nil:
+			footer = errorStyle.Render(m.connErr.Error())
 		default:
-			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  d derp  i info  p prefs  r refresh  q quit")
+			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  d derp  i info  p prefs  c connection  r refresh  q quit")
 		}
 	}
 
