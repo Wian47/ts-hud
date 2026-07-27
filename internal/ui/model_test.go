@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/vt"
+	"tailscale.com/ipn"
 
 	"github.com/Wian47/ts-hud/internal/tsnet"
 )
@@ -530,6 +531,127 @@ func TestPeerDetailRefreshRetriggersProbe(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("Update('r') in peer detail view returned nil cmd, want a probe command")
+	}
+}
+
+func TestPrefsPanelOpensAndFetches(t *testing.T) {
+	m := newTestModel()
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	m = updated.(Model)
+
+	if !m.viewingPrefs {
+		t.Fatal("viewingPrefs = false after 'p', want true")
+	}
+	if !m.prefsLoading {
+		t.Fatal("prefsLoading = false immediately after 'p', want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update('p') returned nil cmd, want a prefs-fetch command")
+	}
+}
+
+func TestPrefsPanelEscCloses(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+
+	if m.viewingPrefs {
+		t.Fatal("viewingPrefs = true after esc, want false")
+	}
+}
+
+func TestPrefsCursorMovesAndClamps(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	m = updated.(Model)
+
+	for i := 0; i < 10; i++ {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		m = updated.(Model)
+	}
+	if m.prefsCursor != numPrefRows-1 {
+		t.Errorf("prefsCursor = %d after 10x 'j', want clamped to %d", m.prefsCursor, numPrefRows-1)
+	}
+
+	for i := 0; i < 10; i++ {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+		m = updated.(Model)
+	}
+	if m.prefsCursor != 0 {
+		t.Errorf("prefsCursor = %d after 10x 'k', want clamped to 0", m.prefsCursor)
+	}
+}
+
+func TestPrefsMsgPopulatesPrefsAndClearsLoading(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(prefsMsg{prefs: &ipn.Prefs{RunSSH: true}})
+	m = updated.(Model)
+
+	if m.prefsLoading {
+		t.Fatal("prefsLoading = true after prefsMsg, want false")
+	}
+	view := m.View()
+	if !contains(view, "SSH server") {
+		t.Errorf("View() missing preferences panel\n---\n%s", view)
+	}
+}
+
+func TestPrefsEnterWithNilPrefsIsNoop(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Error("Update(enter) with prefs still nil returned a non-nil cmd, want nil")
+	}
+	if !m.prefsLoading {
+		t.Error("prefsLoading = false after a no-op enter, want it to remain true (fetch still in flight)")
+	}
+}
+
+func TestPrefsEnterTogglesAndReturnsCmd(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	m = updated.(Model)
+	updated, _ = m.Update(prefsMsg{prefs: &ipn.Prefs{RunSSH: false}})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if !m.prefsLoading {
+		t.Fatal("prefsLoading = false after enter on a loaded panel, want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update(enter) in prefs panel returned nil cmd, want a toggle command")
+	}
+}
+
+func TestPrefsMsgErrorKeepsExistingPrefs(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	m = updated.(Model)
+	updated, _ = m.Update(prefsMsg{prefs: &ipn.Prefs{RunSSH: true}})
+	m = updated.(Model)
+
+	updated, _ = m.Update(prefsMsg{err: errors.New("boom")})
+	m = updated.(Model)
+
+	if m.prefs == nil || !m.prefs.RunSSH {
+		t.Fatalf("prefs = %+v after a failed toggle, want the last-known-good RunSSH=true prefs preserved", m.prefs)
+	}
+	if m.prefsErr == nil {
+		t.Fatal("prefsErr = nil after prefsMsg with an error, want it set")
 	}
 }
 
