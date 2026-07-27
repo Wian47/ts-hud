@@ -1,6 +1,5 @@
 # ts-hud
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/Wian47/ts-hud)](https://goreportcard.com/report/github.com/Wian47/ts-hud)
 [![Release](https://img.shields.io/github/v/release/Wian47/ts-hud)](https://github.com/Wian47/ts-hud/releases)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/Wian47/ts-hud)](go.mod)
 [![License: MIT](https://img.shields.io/github/license/Wian47/ts-hud)](LICENSE)
