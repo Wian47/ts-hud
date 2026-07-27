@@ -45,10 +45,10 @@ type Model struct {
 	exitNodeCursor  int
 	allowLANAccess  bool
 
-	viewingDERP bool
+	viewingDERP  bool
 	derpNetCheck tsnet.NetCheckResult
-	derpLoading bool
-	derpErr     error
+	derpLoading  bool
+	derpErr      error
 
 	viewingSSH bool
 	sshPane    *sshPane
