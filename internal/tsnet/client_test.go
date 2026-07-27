@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"testing"
 
+	"tailscale.com/client/tailscale/apitype"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tailcfg"
@@ -19,6 +20,11 @@ type fakeLocalClient struct {
 	gotMasked  *ipn.MaskedPrefs
 	derpMap    *tailcfg.DERPMap
 	derpMapErr error
+
+	pingResult  *ipnstate.PingResult
+	pingErr     error
+	whoIsResult *apitype.WhoIsResponse
+	whoIsErr    error
 }
 
 func (f *fakeLocalClient) Status(ctx context.Context) (*ipnstate.Status, error) {
@@ -35,6 +41,14 @@ func (f *fakeLocalClient) EditPrefs(ctx context.Context, mp *ipn.MaskedPrefs) (*
 
 func (f *fakeLocalClient) CurrentDERPMap(ctx context.Context) (*tailcfg.DERPMap, error) {
 	return f.derpMap, f.derpMapErr
+}
+
+func (f *fakeLocalClient) Ping(ctx context.Context, ip netip.Addr, pingtype tailcfg.PingType) (*ipnstate.PingResult, error) {
+	return f.pingResult, f.pingErr
+}
+
+func (f *fakeLocalClient) WhoIs(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
+	return f.whoIsResult, f.whoIsErr
 }
 
 func TestFetcherSetExitNode(t *testing.T) {
