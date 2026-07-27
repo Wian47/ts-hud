@@ -41,6 +41,7 @@ ts-hud
 | `x` | Open the exit node picker |
 | `d` | Open the DERP latency matrix |
 | `i` | Open peer detail (live ping + owner/tags) for the selected peer |
+| `p` | Open the preferences panel (SSH, shields up, accept routes/DNS, advertise exit node) |
 | `r` | Manual refresh |
 | `q` / `ctrl+c` | Quit |
 
@@ -100,6 +101,19 @@ which account owns the device and its ACL tags.
 |---|---|
 | `r` | Re-run the probe |
 | `esc` / `i` | Back to the peer table |
+
+### Preferences panel
+
+Press `p` to view and flip the 5 preferences ts-hud exposes: SSH server,
+shields up, accept routes, accept DNS, and advertising this device as an
+exit node. Toggling a row applies immediately — there's no separate save
+step, matching `tailscale set`.
+
+| Key | Action |
+|---|---|
+| `j` / `k` | Move down / up |
+| `enter` | Toggle the highlighted preference |
+| `esc` / `p` | Back to the peer table |
 
 ## Flags
 
