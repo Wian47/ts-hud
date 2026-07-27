@@ -1,3 +1,4 @@
 /ts-hud
 /dist/
 *.test
+/.superpowers/
