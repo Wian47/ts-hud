@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -14,8 +15,9 @@ import (
 )
 
 type peersMsg struct {
-	peers []tsnet.Peer
-	self  *tsnet.Peer
+	peers        []tsnet.Peer
+	self         *tsnet.Peer
+	backendState string
 }
 
 type errMsg struct{ err error }
@@ -43,11 +45,12 @@ type Model struct {
 	fetcher         *tsnet.Fetcher
 	refreshInterval time.Duration
 
-	peers    []tsnet.Peer
-	filtered []tsnet.Peer
-	self     *tsnet.Peer
-	cursor   int
-	err      error
+	peers        []tsnet.Peer
+	filtered     []tsnet.Peer
+	self         *tsnet.Peer
+	backendState string
+	cursor       int
+	err          error
 
 	searching   bool
 	searchInput textinput.Model
@@ -101,11 +104,11 @@ func fetchCmd(fetcher *tsnet.Fetcher) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		peers, self, err := fetcher.Fetch(ctx)
+		peers, self, backendState, err := fetcher.Fetch(ctx)
 		if err != nil {
 			return errMsg{err: err}
 		}
-		return peersMsg{peers: peers, self: self}
+		return peersMsg{peers: peers, self: self, backendState: backendState}
 	}
 }
 
@@ -229,6 +232,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.peers = msg.peers
 		m.self = msg.self
+		m.backendState = msg.backendState
 		m.applyFilter()
 		return m, nil
 
@@ -632,5 +636,9 @@ func (m Model) renderHeader() string {
 	if len(m.self.IPs) > 0 {
 		ip = m.self.IPs[0].String()
 	}
-	return fmt.Sprintf("%s  self: %s (%s)  peers: %d", title, m.self.DisplayName(), ip, len(m.peers))
+	header := fmt.Sprintf("%s  self: %s (%s)  peers: %d", title, m.self.DisplayName(), ip, len(m.peers))
+	if m.backendState != "" && m.backendState != "Running" {
+		header += "  " + errorStyle.Render("["+strings.ToUpper(m.backendState)+"]")
+	}
+	return header
 }

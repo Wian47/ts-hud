@@ -39,16 +39,22 @@ func NewFetcher() *Fetcher {
 	return &Fetcher{lc: &local.Client{}}
 }
 
-// Fetch returns the current peer list and the local node's own status.
-func (f *Fetcher) Fetch(ctx context.Context) ([]Peer, *Peer, error) {
+// Fetch returns the current peer list, the local node's own status, and the
+// daemon's backend state (one of "NoState", "NeedsLogin",
+// "NeedsMachineAuth", "Stopped", "Starting", "Running").
+func (f *Fetcher) Fetch(ctx context.Context) ([]Peer, *Peer, string, error) {
 	status, err := f.lc.Status(ctx)
 	if err != nil {
 		status, err = statusFromCLI(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("fetch tailscale status: %w", err)
+			return nil, nil, "", fmt.Errorf("fetch tailscale status: %w", err)
 		}
 	}
-	return peersFromStatus(status)
+	peers, self, err := peersFromStatus(status)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return peers, self, status.BackendState, nil
 }
 
 // SetExitNode configures peer as the exit node used for outbound internet

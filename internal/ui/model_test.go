@@ -655,6 +655,51 @@ func TestPrefsMsgErrorKeepsExistingPrefs(t *testing.T) {
 	}
 }
 
+func TestRenderHeaderOmitsSuffixWhenRunning(t *testing.T) {
+	m := newTestModel()
+	self := tsnet.Peer{HostName: "laptop", IPs: []netip.Addr{netip.MustParseAddr("100.64.0.9")}}
+	m.self = &self
+	m.backendState = "Running"
+
+	header := m.renderHeader()
+	if contains(header, "RUNNING") {
+		t.Errorf("renderHeader() = %q, want no state suffix when Running", header)
+	}
+}
+
+func TestRenderHeaderOmitsSuffixWhenUnset(t *testing.T) {
+	m := newTestModel()
+	self := tsnet.Peer{HostName: "laptop", IPs: []netip.Addr{netip.MustParseAddr("100.64.0.9")}}
+	m.self = &self
+
+	header := m.renderHeader()
+	if contains(header, "[") {
+		t.Errorf("renderHeader() = %q, want no state suffix before the first fetch populates backendState", header)
+	}
+}
+
+func TestRenderHeaderShowsSuffixWhenStopped(t *testing.T) {
+	m := newTestModel()
+	self := tsnet.Peer{HostName: "laptop", IPs: []netip.Addr{netip.MustParseAddr("100.64.0.9")}}
+	m.self = &self
+	m.backendState = "Stopped"
+
+	header := m.renderHeader()
+	if !contains(header, "[STOPPED]") {
+		t.Errorf("renderHeader() = %q, want it to contain %q", header, "[STOPPED]")
+	}
+}
+
+func TestPeersMsgPopulatesBackendState(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(peersMsg{peers: testPeers(), backendState: "Stopped"})
+	m = updated.(Model)
+
+	if m.backendState != "Stopped" {
+		t.Errorf("backendState = %q after peersMsg, want %q", m.backendState, "Stopped")
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (func() bool {
 		for i := 0; i+len(needle) <= len(haystack); i++ {
