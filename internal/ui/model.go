@@ -42,6 +42,14 @@ type prefsMsg struct {
 
 type connResultMsg struct{ err error }
 
+type accountsMsg struct {
+	current ipn.LoginProfile
+	all     []ipn.LoginProfile
+	err     error
+}
+
+type switchProfileMsg struct{ err error }
+
 // Model is the root Bubble Tea model for ts-hud.
 type Model struct {
 	fetcher         *tsnet.Fetcher
@@ -80,6 +88,13 @@ type Model struct {
 	confirmingDown bool
 	connLoading    bool
 	connErr        error
+
+	viewingAccounts bool
+	accountsCursor  int
+	accountsCurrent ipn.LoginProfile
+	accountsAll     []ipn.LoginProfile
+	accountsLoading bool
+	accountsErr     error
 
 	viewingSSH bool
 	sshPane    *sshPane
@@ -231,6 +246,23 @@ func setWantRunningCmd(fetcher *tsnet.Fetcher, running bool) tea.Cmd {
 	}
 }
 
+func accountsFetchCmd(fetcher *tsnet.Fetcher) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		current, all, err := fetcher.ListProfiles(ctx)
+		return accountsMsg{current: current, all: all, err: err}
+	}
+}
+
+func switchProfileCmd(fetcher *tsnet.Fetcher, id ipn.ProfileID) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return switchProfileMsg{err: fetcher.SwitchProfile(ctx, id)}
+	}
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -291,6 +323,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.connErr = msg.err
 		}
 		return m, nil
+
+	case accountsMsg:
+		m.accountsLoading = false
+		if msg.err != nil {
+			m.accountsErr = msg.err
+			return m, nil
+		}
+		m.accountsCurrent = msg.current
+		m.accountsAll = msg.all
+		m.accountsErr = nil
+		return m, nil
+
+	case switchProfileMsg:
+		m.accountsLoading = false
+		if msg.err != nil {
+			m.accountsErr = msg.err
+			return m, nil
+		}
+		m.accountsErr = nil
+		m.accountsLoading = true
+		return m, accountsFetchCmd(m.fetcher)
 
 	case sshStartedMsg:
 		if !m.viewingSSH {
@@ -353,6 +406,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updatePrefsView(msg)
 		case m.confirmingDown:
 			return m.updateConnConfirm(msg)
+		case m.viewingAccounts:
+			return m.updateAccountsView(msg)
 		case m.viewingSSH:
 			return m.updateSSHPane(msg)
 		default:
@@ -426,6 +481,12 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.connErr = fmt.Errorf("not logged in — run tailscale login")
 		}
 		return m, nil
+	case "a":
+		m.viewingAccounts = true
+		m.accountsCursor = 0
+		m.accountsLoading = true
+		m.accountsErr = nil
+		return m, accountsFetchCmd(m.fetcher)
 	}
 	m.clampCursor()
 	return m, nil
@@ -499,6 +560,41 @@ func (m Model) updateConnConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.confirmingDown = false
 	}
 	return m, nil
+}
+
+func (m Model) updateAccountsView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "a":
+		m.viewingAccounts = false
+		return m, nil
+	case "j", "down":
+		m.accountsCursor++
+		m.clampAccountsCursor()
+	case "k", "up":
+		m.accountsCursor--
+		m.clampAccountsCursor()
+	case "enter":
+		if len(m.accountsAll) == 0 {
+			return m, nil
+		}
+		id := m.accountsAll[m.accountsCursor].ID
+		m.accountsLoading = true
+		return m, switchProfileCmd(m.fetcher, id)
+	}
+	return m, nil
+}
+
+func (m *Model) clampAccountsCursor() {
+	if m.accountsCursor < 0 {
+		m.accountsCursor = 0
+	}
+	if len(m.accountsAll) == 0 {
+		m.accountsCursor = 0
+		return
+	}
+	if m.accountsCursor > len(m.accountsAll)-1 {
+		m.accountsCursor = len(m.accountsAll) - 1
+	}
 }
 
 func (m *Model) clampPrefsCursor() {
@@ -663,6 +759,9 @@ func (m Model) View() string {
 	case m.viewingPrefs:
 		body = renderPrefsPanel(m.prefs, m.prefsCursor, m.prefsLoading, m.prefsErr, width)
 		footer = helpStyle.Render("j/k move  enter toggle  esc/p back")
+	case m.viewingAccounts:
+		body = renderAccountsPanel(m.accountsCurrent, m.accountsAll, m.accountsCursor, m.accountsLoading, m.accountsErr, width)
+		footer = helpStyle.Render("j/k move  enter switch  esc/a back")
 	default:
 		body = renderTable(m.filtered, m.cursor, width)
 		switch {
@@ -675,7 +774,7 @@ func (m Model) View() string {
 		case m.connErr != nil:
 			footer = errorStyle.Render(m.connErr.Error())
 		default:
-			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  d derp  i info  p prefs  c connection  r refresh  q quit")
+			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  d derp  i info  p prefs  c connection  a accounts  r refresh  q quit")
 		}
 	}
 

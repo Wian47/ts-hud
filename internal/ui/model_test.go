@@ -867,3 +867,152 @@ func contains(haystack, needle string) bool {
 		return false
 	})()
 }
+
+func TestAccountsOpensAndFetches(t *testing.T) {
+	m := newTestModel()
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	if !m.viewingAccounts {
+		t.Fatal("viewingAccounts = false after 'a', want true")
+	}
+	if !m.accountsLoading {
+		t.Fatal("accountsLoading = false immediately after 'a', want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update('a') returned nil cmd, want an accounts-fetch command")
+	}
+}
+
+func TestAccountsEscCloses(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+
+	if m.viewingAccounts {
+		t.Fatal("viewingAccounts = true after esc, want false")
+	}
+}
+
+func TestAccountsCursorMovesAndClamps(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+	updated, _ = m.Update(accountsMsg{all: []ipn.LoginProfile{{ID: "1"}, {ID: "2"}}})
+	m = updated.(Model)
+
+	for i := 0; i < 5; i++ {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		m = updated.(Model)
+	}
+	if m.accountsCursor != 1 {
+		t.Errorf("accountsCursor = %d after 5x 'j' over 2 profiles, want clamped to 1", m.accountsCursor)
+	}
+
+	for i := 0; i < 5; i++ {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+		m = updated.(Model)
+	}
+	if m.accountsCursor != 0 {
+		t.Errorf("accountsCursor = %d after 5x 'k', want clamped to 0", m.accountsCursor)
+	}
+}
+
+func TestAccountsMsgPopulatesListAndClearsLoading(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	current := ipn.LoginProfile{ID: "1ab3", Name: "alice@example.com"}
+	updated, _ = m.Update(accountsMsg{current: current, all: []ipn.LoginProfile{current}})
+	m = updated.(Model)
+
+	if m.accountsLoading {
+		t.Fatal("accountsLoading = true after accountsMsg, want false")
+	}
+	view := m.View()
+	if !contains(view, "alice@example.com") {
+		t.Errorf("View() missing accounts panel\n---\n%s", view)
+	}
+}
+
+func TestAccountsMsgErrorKeepsEmptyStateAndSetsError(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(accountsMsg{err: errors.New("boom")})
+	m = updated.(Model)
+
+	if m.accountsErr == nil {
+		t.Fatal("accountsErr = nil after accountsMsg with an error, want it set")
+	}
+	if len(m.accountsAll) != 0 {
+		t.Errorf("accountsAll = %+v after a failed fetch, want empty", m.accountsAll)
+	}
+}
+
+func TestAccountsEnterSwitchesProfile(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+	all := []ipn.LoginProfile{{ID: "1ab3", Name: "alice"}, {ID: "9f2c", Name: "bob"}}
+	updated, _ = m.Update(accountsMsg{current: all[0], all: all})
+	m = updated.(Model)
+	m.accountsCursor = 1
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if !m.accountsLoading {
+		t.Fatal("accountsLoading = false after enter on a profile row, want true")
+	}
+	if cmd == nil {
+		t.Fatal("Update(enter) in accounts view returned nil cmd, want a switch command")
+	}
+}
+
+func TestSwitchProfileMsgSuccessRefetches(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(switchProfileMsg{})
+	m = updated.(Model)
+
+	if m.accountsErr != nil {
+		t.Errorf("accountsErr = %v after a successful switch, want nil", m.accountsErr)
+	}
+	if !m.accountsLoading {
+		t.Error("accountsLoading = false after a successful switch, want true — a follow-up fetch is in flight")
+	}
+	if cmd == nil {
+		t.Fatal("Update(switchProfileMsg{}) returned nil cmd, want a follow-up accounts-fetch command")
+	}
+}
+
+func TestSwitchProfileMsgFailureKeepsListAndSetsError(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+	all := []ipn.LoginProfile{{ID: "1ab3", Name: "alice"}}
+	updated, _ = m.Update(accountsMsg{current: all[0], all: all})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(switchProfileMsg{err: errors.New("boom")})
+	m = updated.(Model)
+
+	if m.accountsErr == nil {
+		t.Fatal("accountsErr = nil after a failed switch, want it set")
+	}
+	if len(m.accountsAll) != 1 {
+		t.Errorf("accountsAll = %+v after a failed switch, want the last-loaded list preserved", m.accountsAll)
+	}
+	if cmd != nil {
+		t.Error("Update(switchProfileMsg{err}) returned a non-nil cmd, want nil — no re-fetch after a failed switch")
+	}
+}
