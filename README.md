@@ -64,6 +64,11 @@ netcheck`) and see latency to every DERP relay region, fastest first, with
 your current home region marked `[preferred]`. This takes a few seconds,
 unlike the rest of the UI.
 
+Above the region list, a connectivity line reports whether UDP is reachable
+and whether your NAT looks "easy" or "hard" — hard NAT means UDP
+hole-punching is unreliable, so expect relayed (DERP/TCP) connections
+instead of direct ones.
+
 | Key | Action |
 |---|---|
 | `r` | Re-run the check |
