@@ -49,6 +49,21 @@ ts-hud
 
 Peers auto-refresh every 5 seconds by default.
 
+### Permissions
+
+Reading peers (`tailscale status`) works for any user. Writing state — the
+preferences panel (`p`), connection toggle (`c`), and account switch (`a`) —
+calls the same privileged LocalAPI operations as `tailscale set`/`up`/`down`/
+`switch`, and the daemon will reject them for a non-root user with "Access
+denied" unless that user is configured as the Tailscale operator:
+
+```bash
+sudo tailscale set --operator=$(whoami)
+```
+
+Run that once; afterwards `ts-hud` (and the `tailscale` CLI) can write state
+without `sudo`.
+
 ### Exit node picker
 
 Press `x` to open a list of peers advertising as exit nodes.
