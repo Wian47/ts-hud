@@ -44,10 +44,26 @@ ts-hud
 | `p` | Open the preferences panel (SSH, shields up, accept routes/DNS, advertise exit node) |
 | `c` | Bring the Tailscale connection up, or down (with confirmation) |
 | `a` | Open the account-switch overlay |
+| `?` | Open the help overlay (all keybindings) |
 | `r` | Manual refresh |
 | `q` / `ctrl+c` | Quit |
 
 Peers auto-refresh every 5 seconds by default.
+
+### Permissions
+
+Reading peers (`tailscale status`) works for any user. Writing state — the
+preferences panel (`p`), connection toggle (`c`), and account switch (`a`) —
+calls the same privileged LocalAPI operations as `tailscale set`/`up`/`down`/
+`switch`, and the daemon will reject them for a non-root user with "Access
+denied" unless that user is configured as the Tailscale operator:
+
+```bash
+sudo tailscale set --operator=$(whoami)
+```
+
+Run that once; afterwards `ts-hud` (and the `tailscale` CLI) can write state
+without `sudo`.
 
 ### Exit node picker
 
@@ -146,6 +162,18 @@ isn't supported here — see `tailscale login` for that.
 | `j` / `k` | Move down / up |
 | `enter` | Switch to the highlighted account |
 | `esc` / `a` | Back to the peer table |
+
+### Help overlay
+
+Press `?` from anywhere — the peer table or any sub-panel — except the
+search input and an active ssh session (both forward every keystroke
+verbatim) to see every keybinding in the app grouped by section. Closing
+it (`esc` or `?` again) returns to exactly whatever screen was open
+underneath.
+
+| Key | Action |
+|---|---|
+| `esc` / `?` | Close and return to the previous screen |
 
 ## Flags
 
