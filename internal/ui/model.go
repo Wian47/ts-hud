@@ -96,6 +96,8 @@ type Model struct {
 	accountsLoading bool
 	accountsErr     error
 
+	viewingHelp bool
+
 	viewingSSH bool
 	sshPane    *sshPane
 	spawner    ptySpawner
@@ -394,7 +396,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, fetchCmd(m.fetcher)
 
 	case tea.KeyMsg:
+		if msg.String() == "?" && !m.searching && !m.viewingSSH {
+			m.viewingHelp = !m.viewingHelp
+			return m, nil
+		}
 		switch {
+		case m.viewingHelp:
+			return m.updateHelpView(msg)
 		case m.searching:
 			return m.updateSearch(msg)
 		case m.pickingExitNode:
@@ -502,6 +510,19 @@ func (m Model) updateDERPView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.derpLoading = true
 		m.derpErr = nil
 		return m, derpCheckCmd(m.fetcher)
+	}
+	return m, nil
+}
+
+// updateHelpView only needs to handle "esc": a "?" keypress is already
+// intercepted and toggled off before dispatch ever reaches here (see the
+// interception point added in this step), so a "?" case here would be
+// dead code.
+func (m Model) updateHelpView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.viewingHelp = false
+		return m, nil
 	}
 	return m, nil
 }
@@ -748,6 +769,9 @@ func (m Model) View() string {
 
 	var body, footer string
 	switch {
+	case m.viewingHelp:
+		body = renderHelpPanel(width)
+		footer = helpStyle.Render("esc/? close")
 	case m.viewingSSH:
 		body = renderSSHPane(m.sshPane)
 		footer = helpStyle.Render("ctrl+q detach")
@@ -778,7 +802,7 @@ func (m Model) View() string {
 		case m.connErr != nil:
 			footer = errorStyle.Render(m.connErr.Error())
 		default:
-			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  d derp  i info  p prefs  c connection  a accounts  r refresh  q quit")
+			footer = helpStyle.Render("j/k move  g/G top/bottom  / search  enter ssh  x exit-node  d derp  i info  p prefs  c connection  a accounts  ? help  r refresh  q quit")
 		}
 	}
 

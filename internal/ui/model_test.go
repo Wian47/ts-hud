@@ -1053,3 +1053,80 @@ func TestAccountsMsgClampsCursorToShorterList(t *testing.T) {
 		t.Errorf("accountsCursor = %d after accountsMsg shrank the list, want clamped to 0", m.accountsCursor)
 	}
 }
+
+func TestHelpOpensAndCloses(t *testing.T) {
+	m := newTestModel()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+	if !m.viewingHelp {
+		t.Fatal("expected viewingHelp to be true after '?'")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	if m.viewingHelp {
+		t.Fatal("expected viewingHelp to be false after esc")
+	}
+}
+
+func TestHelpTogglesClosedOnSecondQuestionMark(t *testing.T) {
+	m := newTestModel()
+	m.viewingHelp = true
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+	if m.viewingHelp {
+		t.Fatal("expected viewingHelp to be false after second '?'")
+	}
+}
+
+func TestHelpDoesNotOpenWhileSearching(t *testing.T) {
+	m := newTestModel()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	if !m.searching {
+		t.Fatal("expected searching to be true after '/'")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+	if m.viewingHelp {
+		t.Fatal("expected viewingHelp to stay false while searching")
+	}
+	if m.searchInput.Value() != "?" {
+		t.Fatalf("expected '?' to be forwarded to the search input, got %q", m.searchInput.Value())
+	}
+}
+
+func TestHelpDoesNotOpenWhileViewingSSH(t *testing.T) {
+	m := newTestModel()
+	m.viewingSSH = true
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+	if m.viewingHelp {
+		t.Fatal("expected viewingHelp to stay false while viewingSSH")
+	}
+}
+
+func TestHelpClosePreservesUnderlyingPanelState(t *testing.T) {
+	m := newTestModel()
+	m.viewingDERP = true
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+	if !m.viewingHelp || !m.viewingDERP {
+		t.Fatal("expected viewingHelp true and viewingDERP still true after opening help from DERP view")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	if m.viewingHelp {
+		t.Fatal("expected viewingHelp false after esc")
+	}
+	if !m.viewingDERP {
+		t.Fatal("expected viewingDERP to still be true after closing help — underlying panel state must be preserved")
+	}
+}
