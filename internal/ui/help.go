@@ -28,6 +28,7 @@ func helpSections() []helpSection {
 			"a          account switch",
 			"r          refresh",
 			"q          quit",
+			"?          toggle this help",
 		}},
 		{"Search", []string{
 			"esc        clear and exit search",
@@ -68,17 +69,17 @@ func helpSections() []helpSection {
 
 // renderHelpPanel renders the ? overlay: a static, grouped list of every
 // keybinding in the app. Unlike the other panels it never loads or
-// errors, so there is no loading/error branch here.
+// errors, so there is no loading/error branch here. width is accepted
+// but unused — it exists only so this function's signature matches the
+// other render*Panel functions (renderAccountsPanel, renderPrefsPanel,
+// etc.) that Model.View dispatches to interchangeably.
 func renderHelpPanel(width int) string {
 	var b strings.Builder
 
 	b.WriteString(headerStyle.Render("Help"))
 	b.WriteString("\n")
 
-	for i, section := range helpSections() {
-		if i > 0 {
-			b.WriteString("\n")
-		}
+	for _, section := range helpSections() {
 		b.WriteString(rowStyle.Render("  " + section.title))
 		b.WriteString("\n")
 		for _, row := range section.rows {
@@ -86,9 +87,6 @@ func renderHelpPanel(width int) string {
 			b.WriteString("\n")
 		}
 	}
-
-	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("  esc/? close"))
 
 	return strings.TrimRight(b.String(), "\n")
 }

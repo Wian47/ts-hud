@@ -29,7 +29,7 @@ func TestRenderHelpPanelListsAllSections(t *testing.T) {
 func TestRenderHelpPanelListsKnownKeys(t *testing.T) {
 	out := renderHelpPanel(80)
 
-	keys := []string{"j/k", "g/G", "ctrl+q", "l ", "y ", "esc/a"}
+	keys := []string{"j/k", "g/G", "ctrl+q", "l ", "y          confirm bringing the connection down", "esc/a"}
 	for _, k := range keys {
 		if !strings.Contains(out, k) {
 			t.Errorf("renderHelpPanel output missing key %q\noutput:\n%s", k, out)

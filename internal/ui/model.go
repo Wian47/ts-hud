@@ -516,8 +516,8 @@ func (m Model) updateDERPView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateHelpView only needs to handle "esc": a "?" keypress is already
 // intercepted and toggled off before dispatch ever reaches here (see the
-// interception point added in this step), so a "?" case here would be
-// dead code.
+// "?" interception at the top of Update's tea.KeyMsg case), so a "?" case
+// here would be dead code.
 func (m Model) updateHelpView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
